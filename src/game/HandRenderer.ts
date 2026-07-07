@@ -14,11 +14,18 @@ export interface HandZone {
   /** Vertical center for cards */
   y: number;
   depth: number;
+  /** UI scale factor (mobile). Cards + text scale with this. */
+  scale: number;
 }
 
 const CARD_W = 54;
 const CARD_H = 74;
 const GAP = 8;
+
+/** Floored, scaled font-size string so card text stays legible on mobile. */
+function fs(px: number, scale: number): string {
+  return `${Math.max(6, Math.round(px * scale))}px`;
+}
 
 export class HandRenderer {
   private scene: Phaser.Scene;
@@ -34,11 +41,14 @@ export class HandRenderer {
     this.clear();
     if (hand.length === 0) return;
 
+    const sc = zone.scale;
+    const cardW = CARD_W * sc;
+    const gap = GAP * sc;
     const avail = zone.right - zone.x;
     // Fan/overlap cards so they always fit the zone.
-    const step = Math.min(CARD_W + GAP, hand.length > 1 ? (avail - CARD_W) / (hand.length - 1) : 0);
-    const totalW = CARD_W + step * (hand.length - 1);
-    const startX = zone.x + Math.max(0, (avail - totalW) / 2) + CARD_W / 2;
+    const step = Math.min(cardW + gap, hand.length > 1 ? (avail - cardW) / (hand.length - 1) : 0);
+    const totalW = cardW + step * (hand.length - 1);
+    const startX = zone.x + Math.max(0, (avail - totalW) / 2) + cardW / 2;
 
     hand.forEach((inst, i) => {
       const def = getCardDef(inst.definitionId);
@@ -46,8 +56,8 @@ export class HandRenderer {
       const affordable = def.manaCost <= mana;
       const selected = inst.instanceId === selectedId;
       const cx = startX + i * step;
-      const cy = zone.y - (selected ? 12 : 0);
-      this.cards.push(this.buildCard(def, cx, cy, zone.depth + i, affordable, selected, inst.instanceId));
+      const cy = zone.y - (selected ? 12 * sc : 0);
+      this.cards.push(this.buildCard(def, cx, cy, zone.depth + i, affordable, selected, inst.instanceId, sc));
     });
   }
 
@@ -59,37 +69,41 @@ export class HandRenderer {
     affordable: boolean,
     selected: boolean,
     instanceId: string,
+    sc: number,
   ): Phaser.GameObjects.Container {
     const s = this.scene;
+    const cardW = CARD_W * sc;
+    const cardH = CARD_H * sc;
+    const pad = 8 * sc;
     const bgKey = affordable ? 'card_background' : 'card_background_disabled';
     const bg = s.add.image(0, 0, s.textures.exists(bgKey) ? bgKey : 'card_background')
-      .setDisplaySize(CARD_W, CARD_H);
+      .setDisplaySize(cardW, cardH);
     if (selected) bg.setTint(0x99ddff);
 
-    const name = s.add.text(0, -CARD_H / 2 + 20, def.name, {
-      fontSize: '7px', color: '#ffffff', fontFamily: 'monospace',
-      align: 'center', wordWrap: { width: CARD_W - 8 },
+    const name = s.add.text(0, -cardH / 2 + 20 * sc, def.name, {
+      fontSize: fs(7, sc), color: '#ffffff', fontFamily: 'monospace',
+      align: 'center', wordWrap: { width: cardW - pad },
     }).setOrigin(0.5, 0);
 
-    const desc = s.add.text(0, CARD_H / 2 - 22, def.description, {
-      fontSize: '6px', color: '#cdd1e0', fontFamily: 'monospace',
-      align: 'center', wordWrap: { width: CARD_W - 8 },
+    const desc = s.add.text(0, cardH / 2 - 22 * sc, def.description, {
+      fontSize: fs(6, sc), color: '#cdd1e0', fontFamily: 'monospace',
+      align: 'center', wordWrap: { width: cardW - pad },
     }).setOrigin(0.5, 0);
 
     // Mana cost badge (top-left)
-    const badge = s.add.circle(-CARD_W / 2 + 8, -CARD_H / 2 + 8, 8, 0x1a3a8a)
+    const badge = s.add.circle(-cardW / 2 + pad, -cardH / 2 + pad, 8 * sc, 0x1a3a8a)
       .setStrokeStyle(1, 0x7fb6ff);
-    const cost = s.add.text(-CARD_W / 2 + 8, -CARD_H / 2 + 8, `${def.manaCost}`, {
-      fontSize: '9px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+    const cost = s.add.text(-cardW / 2 + pad, -cardH / 2 + pad, `${def.manaCost}`, {
+      fontSize: fs(9, sc), color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0.5);
 
     const container = s.add.container(cx, cy, [bg, name, desc, badge, cost]).setDepth(depth);
     if (!affordable) container.setAlpha(0.6);
 
     // Full-card touch target (finger-friendly).
-    container.setSize(CARD_W, CARD_H);
+    container.setSize(cardW, cardH);
     container.setInteractive(
-      new Phaser.Geom.Rectangle(-CARD_W / 2, -CARD_H / 2, CARD_W, CARD_H),
+      new Phaser.Geom.Rectangle(-cardW / 2, -cardH / 2, cardW, cardH),
       Phaser.Geom.Rectangle.Contains,
     );
     container.on('pointerdown', (_p: Phaser.Input.Pointer, _x: number, _y: number, e: Phaser.Types.Input.EventData) => {
