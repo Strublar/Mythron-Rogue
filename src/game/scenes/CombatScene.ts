@@ -8,12 +8,15 @@
 // - Spawn Phaser particle VFX on attacks/spells
 
 import Phaser from 'phaser';
-import { GameState, TurnPhase, Unit, Position } from '../../types';
-import { createInitialGameState } from '../../engine/GameState';
-import { reachableTiles, attackableTargets } from '../../engine/BoardState';
+import { GameState, TurnPhase, Unit, Position, CardInstance } from '../../types';
+import { createInitialGameState, drawCard } from '../../engine/GameState';
+import { reachableTiles, attackableTargets, cardinalNeighbors, unitAt } from '../../engine/BoardState';
+import { getCardDef, targetingFor, SUMMON_ATLASES } from '../../engine/CardDatabase';
+import { resolveCard } from '../../engine/CardResolver';
 import { createUnitSprite, playUnitAnim, UnitAnimKey } from '../UnitAnimator';
 import { BoardTileManager } from '../BoardTileManager';
 import { TileHighlightLayer } from '../TileHighlightLayer';
+import { HandRenderer } from '../HandRenderer';
 
 const COLS = 9;
 const ROWS = 5;
@@ -45,6 +48,11 @@ export class CombatScene extends Phaser.Scene {
   private manaIcons: Phaser.GameObjects.Image[] = [];
   private playerHpText!: Phaser.GameObjects.Text;
   private enemyHpText!: Phaser.GameObjects.Text;
+  private playerHandText!: Phaser.GameObjects.Text;
+  private enemyHandText!: Phaser.GameObjects.Text;
+  private handRenderer!: HandRenderer;
+  private selectedCard: CardInstance | null = null;
+  private cardTargetPositions: Position[] = [];
   private tooltipContainer: Phaser.GameObjects.Container | null = null;
   private tooltipTimer: Phaser.Time.TimerEvent | null = null;
   private hoveredUnit: Unit | null = null;
@@ -59,6 +67,11 @@ export class CombatScene extends Phaser.Scene {
     this.load.atlas('f1_general', 'resources/units/f1_general.png', 'resources/units/f1_general_atlas.json');
     this.load.atlas('f2_general', 'resources/units/f2_general.png', 'resources/units/f2_general_atlas.json');
     this.load.atlas('tiles_board', 'resources/tiles/tiles_board.png', 'resources/tiles/tiles_board_atlas.json');
+    for (const key of SUMMON_ATLASES) {
+      if (!this.textures.exists(key)) {
+        this.load.atlas(key, `resources/units/${key}.png`, `resources/units/${key}_atlas.json`);
+      }
+    }
     if (!this.textures.exists('combat_bg')) {
       this.load.image('combat_bg',     'resources/maps/battlemap0_background.png');
       this.load.image('combat_mid',    'resources/maps/battlemap0_middleground.png');
@@ -77,6 +90,8 @@ export class CombatScene extends Phaser.Scene {
       this.load.image('icon_atk',      'resources/ui/icon_atk.png');
       this.load.image('portrait_p',    'resources/generals/general_f1.png');
       this.load.image('portrait_e',    'resources/generals/general_f2.png');
+      this.load.image('card_background',          'resources/ui/card_background.png');
+      this.load.image('card_background_disabled', 'resources/ui/card_background_disabled.png');
     }
   }
 
@@ -122,6 +137,8 @@ export class CombatScene extends Phaser.Scene {
     this.renderUnits();
     this.drawPlayerHUDs();
     this.drawBottomBar();
+    this.handRenderer = new HandRenderer(this, id => this.onCardTap(id));
+    this.renderHand();
 
     // Turn indicator (legacy text, kept for accessibility)
     const cx = width / 2;
@@ -181,7 +198,7 @@ export class CombatScene extends Phaser.Scene {
       fontSize: this.fs(15), color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0, 0).setDepth(depth);
     this.drawManaPips(panelCx, manaY, gs.player.mana, gs.player.maxMana, depth);
-    this.add.text(panelCx, deckY, `HAND ${gs.player.hand.length}`, {
+    this.playerHandText = this.add.text(panelCx, deckY, `HAND ${gs.player.hand.length}`, {
       fontSize: this.fs(9), color: '#aaaaaa', fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setDepth(depth);
 
@@ -198,7 +215,7 @@ export class CombatScene extends Phaser.Scene {
       fontSize: this.fs(15), color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0, 0).setDepth(depth);
     this.drawManaPips(panelCxR, manaY, gs.enemy.mana, gs.enemy.maxMana, depth);
-    this.add.text(panelCxR, deckY, `HAND ${gs.enemy.hand.length}`, {
+    this.enemyHandText = this.add.text(panelCxR, deckY, `HAND ${gs.enemy.hand.length}`, {
       fontSize: this.fs(9), color: '#aaaaaa', fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setDepth(depth);
   }
@@ -234,18 +251,7 @@ export class CombatScene extends Phaser.Scene {
     replaceBtn.on('pointerover', () => replaceBtn.setColor('#88ddff'));
     replaceBtn.on('pointerout', () => replaceBtn.setColor('#ffffff'));
 
-    // Card slot placeholders (3 cards centred)
-    const cardW = 50 * s;
-    const cardH = 66 * s;
-    const gap = 12 * s;
-    const totalW = 3 * cardW + 2 * gap;
-    const startX = width / 2 - totalW / 2 + cardW / 2;
-    for (let i = 0; i < 3; i++) {
-      const cx = startX + i * (cardW + gap);
-      const g = this.add.graphics().setDepth(depth + 1);
-      g.lineStyle(1, 0x4466aa, 0.6);
-      g.strokeRoundedRect(cx - cardW / 2, barY - cardH / 2, cardW, cardH, 4 * s);
-    }
+    // Hand cards are drawn by HandRenderer (see renderHand).
 
     // END TURN button (right)
     this.endTurnImage = this.add.image(width - 80 * s, barY, 'btn_end_mine')
@@ -275,6 +281,126 @@ export class CombatScene extends Phaser.Scene {
     const manaY = Math.round(56 * s) + portraitSize / 2 + 10 * s + 18 * s + 22 * s;
     this.drawManaPips(panelCx, manaY, gs.player.mana, gs.player.maxMana, depth);
     this.drawManaPips(panelCxR, manaY, gs.enemy.mana, gs.enemy.maxMana, depth);
+    this.playerHandText?.setText(`HAND ${gs.player.hand.length}`);
+    this.enemyHandText?.setText(`HAND ${gs.enemy.hand.length}`);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hand / card play
+  // ---------------------------------------------------------------------------
+
+  private handZone(): { x: number; right: number; y: number; depth: number; scale: number } {
+    const { width, height } = this.scale;
+    const s = this.uiScale;
+    // Sit cards on the bottom bar, clearing the REPLACE (left) and END TURN (right) buttons.
+    return {
+      x: 140 * s,
+      right: width - 160 * s,
+      y: height - Math.round(90 * s) / 2,
+      depth: 12,
+      scale: s,
+    };
+  }
+
+  private renderHand(): void {
+    const gs = this.gameState;
+    this.handRenderer.render(
+      gs.player.hand,
+      gs.player.mana,
+      this.selectedCard?.instanceId ?? null,
+      this.handZone(),
+    );
+  }
+
+  private onCardTap(instanceId: string): void {
+    if (this.gameOver || this.currentPhase !== 'PLAYER_TURN') return;
+    // Toggle off if tapping the selected card.
+    if (this.selectedCard?.instanceId === instanceId) {
+      this.cancelCardSelection();
+      return;
+    }
+    const card = this.gameState.player.hand.find(c => c.instanceId === instanceId);
+    const def = card && getCardDef(card.definitionId);
+    if (!card || !def || def.manaCost > this.gameState.player.mana) return;
+
+    // Selecting a card cancels any unit selection.
+    this.selectedUnit = null;
+    this.clearHighlights();
+    this.selectedCard = card;
+    this.cardTargetPositions = this.computeCardTargets(def);
+    if (this.cardTargetPositions.length > 0) {
+      const type = targetingFor(def) === 'enemyUnit' ? 'attack' : 'move';
+      this.highlightLayer.show(this.cardTargetPositions, type);
+    }
+    this.renderHand();
+  }
+
+  private computeCardTargets(def: NonNullable<ReturnType<typeof getCardDef>>): Position[] {
+    const units = this.gameState.units;
+    const mode = targetingFor(def);
+    if (mode === 'enemyUnit') {
+      return units.filter(u => u.faction !== 'player').map(u => ({ ...u.position }));
+    }
+    if (mode === 'friendlyUnit') {
+      return units.filter(u => u.faction === 'player').map(u => ({ ...u.position }));
+    }
+    // emptyAdjacent: empty tiles cardinally adjacent to any friendly unit.
+    const seen = new Set<string>();
+    const tiles: Position[] = [];
+    for (const u of units.filter(u => u.faction === 'player')) {
+      for (const n of cardinalNeighbors(u.position)) {
+        const k = `${n.col},${n.row}`;
+        if (seen.has(k) || unitAt(units, n)) continue;
+        seen.add(k);
+        tiles.push(n);
+      }
+    }
+    return tiles;
+  }
+
+  private cancelCardSelection(): void {
+    this.selectedCard = null;
+    this.cardTargetPositions = [];
+    this.clearHighlights();
+    this.renderHand();
+  }
+
+  private playCard(card: CardInstance, target: Position): void {
+    const gs = this.gameState;
+    const result = resolveCard(gs, gs.player, card, target);
+    if (!result.ok) {
+      this.cancelCardSelection();
+      return;
+    }
+    this.playerActedThisTurn = true;
+
+    if (result.summoned) {
+      this.spawnUnitSprite(result.summoned);
+    }
+    if (result.affected) {
+      this.updateStatDisplay(result.affected);
+      if (result.affected.stats.hp <= 0) this.handleDeath(result.affected);
+    }
+
+    this.selectedCard = null;
+    this.cardTargetPositions = [];
+    this.clearHighlights();
+    this.refreshHUD();
+    this.renderHand();
+  }
+
+  private spawnUnitSprite(unit: Unit): void {
+    const { x, y } = this.cellToPixel(unit.position.col, unit.position.row);
+    const spriteY = y; // centre sprite in its cell
+    const sprite = createUnitSprite(this, unit.definitionId, x, spriteY)
+      .setDisplaySize(this.tileW, this.tileW)
+      .setDepth(unit.position.col + unit.position.row + 0.5);
+    if (unit.faction === 'enemy') sprite.setFlipX(true);
+    this.unitSprites.set(unit.id, sprite);
+    this.unitKeyMap.set(unit.id, unit.definitionId);
+    this.updateStatDisplay(unit);
+    sprite.setScale(sprite.scaleX * 0.6);
+    this.tweens.add({ targets: sprite, scaleX: sprite.scaleX / 0.6, scaleY: sprite.scaleY / 0.6, duration: 220, ease: 'Back.Out' });
   }
 
   // ---------------------------------------------------------------------------
@@ -283,6 +409,7 @@ export class CombatScene extends Phaser.Scene {
 
   endPlayerTurn(): void {
     if (this.currentPhase !== 'PLAYER_TURN') return;
+    if (this.selectedCard) this.cancelCardSelection();
     this.currentPhase = 'AI_TURN';
     this.turnIndicator.setText('AI TURN').setColor('#ff8888');
     this.endTurnImage.setTexture('btn_end_enemy').setAlpha(0.55).disableInteractive();
@@ -306,7 +433,9 @@ export class CombatScene extends Phaser.Scene {
     const ps = this.gameState.player;
     ps.maxMana = Math.min(ps.maxMana + 1, MAX_MANA);
     ps.mana = ps.maxMana;
+    drawCard(ps);
     this.refreshHUD();
+    this.renderHand();
     this.showTurnNotification('notif_yours');
   }
 
@@ -340,6 +469,15 @@ export class CombatScene extends Phaser.Scene {
     if (this.currentPhase !== 'PLAYER_TURN') return;
     const pos = this.pixelToCell(x, y);
     if (!pos) return;
+
+    // Card-play mode: a card is selected, tap a valid target tile to play it.
+    if (this.selectedCard) {
+      const isTarget = this.cardTargetPositions.some(p => p.col === pos.col && p.row === pos.row);
+      if (isTarget) this.playCard(this.selectedCard, pos);
+      else this.cancelCardSelection();
+      return;
+    }
+
     const unit = this.gameState.units.find(u => u.position.col === pos.col && u.position.row === pos.row);
     if (this.selectedUnit) {
       const isAttackable = this.attackablePositions.some(p => p.col === pos.col && p.row === pos.row);
