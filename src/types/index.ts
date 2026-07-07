@@ -64,12 +64,37 @@ export interface StatusEffect {
 
 export type CardType = 'unit' | 'spell' | 'artifact';
 
+/** Summon a unit onto an empty tile next to a friendly unit */
+export interface SummonEffect {
+  kind: 'summon';
+  /** UnitAnimator atlas key (also used as definitionId) */
+  unitKey: string;
+  stats: UnitStats;
+}
+
+/** Deal damage to a targeted enemy unit */
+export interface DamageEffect {
+  kind: 'damage';
+  amount: number;
+}
+
+/** Restore HP to a targeted friendly unit (capped at maxHp) */
+export interface HealEffect {
+  kind: 'heal';
+  amount: number;
+}
+
+export type CardEffect = SummonEffect | DamageEffect | HealEffect;
+
+export type CardTargeting = 'emptyAdjacent' | 'enemyUnit' | 'friendlyUnit';
+
 export interface CardDefinition {
   id: string;
   name: string;
   type: CardType;
   manaCost: number;
-  // TODO: add effect payload (e.g. { damage: number } | { summonUnitId: string })
+  description: string;
+  effect: CardEffect;
 }
 
 export interface CardInstance {
@@ -115,6 +140,7 @@ export type GameAction = MoveAction | AttackAction | PlayCardAction | EndTurnAct
 export interface PlayerState {
   faction: Faction;
   hand: CardInstance[];
+  deck: CardInstance[]; // draw pile — front is next card drawn
   mana: number;
   maxMana: number;
   general: Unit; // hero unit — death = game over

@@ -6,22 +6,17 @@
 import React, { useMemo } from 'react';
 import { RunState } from '../types';
 import { generateDraftOffer, pickCard, skipDraft } from '../roguelike/DraftSystem';
+import { CARD_DB } from '../engine/CardDatabase';
 
 interface Props {
   run: RunState;
   onPick: (updatedRun: RunState) => void;
 }
 
-// TODO: inject real card pool from src/data/cards.ts
-const CARD_POOL_PLACEHOLDER = [
-  { id: 'c1', name: 'Iron Dervish', type: 'unit' as const, manaCost: 2 },
-  { id: 'c2', name: 'Sundrop Elixir', type: 'spell' as const, manaCost: 1 },
-  { id: 'c3', name: 'Silverguard Knight', type: 'unit' as const, manaCost: 3 },
-  { id: 'c4', name: 'Holy Immolation', type: 'spell' as const, manaCost: 4 },
-];
+const CARD_POOL = Object.values(CARD_DB);
 
 export function DraftScreen({ run, onPick }: Props): React.ReactElement {
-  const offer = useMemo(() => generateDraftOffer(run, CARD_POOL_PLACEHOLDER), [run]);
+  const offer = useMemo(() => generateDraftOffer(run, CARD_POOL), [run]);
 
   return (
     <div style={{
