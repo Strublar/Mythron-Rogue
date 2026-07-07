@@ -3,7 +3,24 @@
 // - applyAction: pure reducer — returns new GameState given current state + action
 // GameState is the single source of truth; CombatScene reads it to render.
 
-import { GameState, Unit, BOARD_COLS, BOARD_ROWS } from '../types';
+import { GameState, Unit, PlayerState, BOARD_COLS, BOARD_ROWS } from '../types';
+import { buildStarterDeck } from './CardDatabase';
+
+const OPENING_HAND_SIZE = 3;
+
+/** Build a player's draw pile and deal an opening hand off the top. */
+function dealStartingCards(): Pick<PlayerState, 'hand' | 'deck'> {
+  const deck = buildStarterDeck();
+  const hand = deck.splice(0, OPENING_HAND_SIZE);
+  return { hand, deck };
+}
+
+/** Draw one card from the deck into hand (capped). Mutates player. */
+export function drawCard(player: PlayerState, handCap = 8): void {
+  if (player.deck.length === 0) return;
+  if (player.hand.length >= handCap) return;
+  player.hand.push(player.deck.shift()!);
+}
 
 export function createInitialGameState(): GameState {
   // TODO: accept an EncounterDefinition param so each floor has different enemy loadout
@@ -39,14 +56,14 @@ export function createInitialGameState(): GameState {
     activePlayer: 'player',
     player: {
       faction: 'player',
-      hand: [],      // TODO: deal opening hand from run deck
+      ...dealStartingCards(),
       mana: 2,       // turn 1 mana (Duelyst: starts at 2, +1 per turn, cap 9)
       maxMana: 2,
       general: playerGeneral,
     },
     enemy: {
       faction: 'enemy',
-      hand: [],      // TODO: deal enemy hand from encounter deck
+      ...dealStartingCards(),
       mana: 2,
       maxMana: 2,
       general: enemyGeneral,

@@ -44,6 +44,26 @@ export const UNIT_DEFS: Record<string, UnitDef> = {
     framePrefix: 'f5_general',
     availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing', 'cast', 'caststart', 'castloop', 'castend'],
   },
+  f1_silverguardsquire: {
+    atlasKey: 'f1_silverguardsquire',
+    framePrefix: 'f1_silverguardsquire',
+    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing'],
+  },
+  f1_sunriser: {
+    atlasKey: 'f1_sunriser',
+    framePrefix: 'f1_sunriser',
+    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing'],
+  },
+  f1_silvermanevanguard: {
+    atlasKey: 'f1_silvermanevanguard',
+    framePrefix: 'f1_silvermanevanguard',
+    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing'],
+  },
+  f1_ironcliffeguardian: {
+    atlasKey: 'f1_ironcliffeguardian',
+    framePrefix: 'f1_ironcliffeguardian',
+    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing'],
+  },
 };
 
 function animGlobalKey(unitKey: string, anim: UnitAnimKey): string {
