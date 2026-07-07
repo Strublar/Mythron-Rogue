@@ -49,6 +49,7 @@ export class CombatScene extends Phaser.Scene {
   private tooltipTimer: Phaser.Time.TimerEvent | null = null;
   private hoveredUnit: Unit | null = null;
   private gameOver = false;
+  private uiScale = 1;
 
   constructor() {
     super({ key: 'CombatScene' });
@@ -82,11 +83,17 @@ export class CombatScene extends Phaser.Scene {
   create(): void {
     const { width, height } = this.scale;
 
-    // Square grid: uniform cell size (tileH = tileW)
-    const TOP_UI_H = 55;
-    const BOTTOM_BAR_H = 90;
+    // UI scale factor: proportional to viewport (720p reference), floored so
+    // text and tap targets stay legible/finger-friendly on small mobile screens.
+    this.uiScale = Phaser.Math.Clamp(Math.min(width / 1280, height / 720), 0.8, 1.5);
+
+    // Square grid: uniform cell size (tileH = tileW).
+    // Reserve scaled UI bands top/bottom and keep the board narrower so the
+    // side HUD panels and bottom bar have room.
+    const TOP_UI_H = Math.round(72 * this.uiScale);
+    const BOTTOM_BAR_H = Math.round(100 * this.uiScale);
     const availH = height - TOP_UI_H - BOTTOM_BAR_H;
-    const tileWByWidth  = Math.floor(width * 0.78 / COLS);
+    const tileWByWidth  = Math.floor(width * 0.72 / COLS);
     const tileWByHeight = Math.floor(availH / ROWS);
     this.tileW = Math.min(tileWByWidth, tileWByHeight);
     this.tileH = this.tileW;
@@ -119,7 +126,7 @@ export class CombatScene extends Phaser.Scene {
     // Turn indicator (legacy text, kept for accessibility)
     const cx = width / 2;
     this.turnIndicator = this.add.text(cx, 6, 'YOUR TURN', {
-      fontSize: '11px',
+      fontSize: this.fs(11),
       color: '#88bbff',
       fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setDepth(10).setAlpha(0.7);
@@ -133,6 +140,11 @@ export class CombatScene extends Phaser.Scene {
   // Visual layer builders
   // ---------------------------------------------------------------------------
 
+  /** Scaled font-size string, floored so text stays readable on mobile. */
+  private fs(px: number): string {
+    return `${Math.max(8, Math.round(px * this.uiScale))}px`;
+  }
+
   private drawBackground(): void {
     const { width, height } = this.scale;
     this.add.image(width / 2, height / 2, 'combat_bg')
@@ -144,15 +156,16 @@ export class CombatScene extends Phaser.Scene {
   private drawPlayerHUDs(): void {
     const { width, height } = this.scale;
     const gs = this.gameState;
+    const s = this.uiScale;
     const depth = 10;
     const panelCx = this.gridLeftEdge / 2;
     const panelCxR = (this.gridRightEdge + width) / 2;
-    const portraitSize = Math.min(panelCx * 1.4, 100);
-    const portraitY = 56;
-    const nameY = portraitY + portraitSize / 2 + 10;
-    const hpY = nameY + 18;
-    const manaY = hpY + 22;
-    const deckY = manaY + 16;
+    const portraitSize = Math.min(panelCx * 1.4, 100 * s);
+    const portraitY = Math.round(56 * s);
+    const nameY = portraitY + portraitSize / 2 + 10 * s;
+    const hpY = nameY + 18 * s;
+    const manaY = hpY + 22 * s;
+    const deckY = manaY + 16 * s;
     void height; // available for future vertical layout
 
     // --- Player (left panel) ---
@@ -160,16 +173,16 @@ export class CombatScene extends Phaser.Scene {
       .setDisplaySize(portraitSize, portraitSize)
       .setDepth(depth).setTint(0x88aaff);
     this.add.text(panelCx, nameY, 'YOU', {
-      fontSize: '11px', color: '#aaddff', fontFamily: 'monospace',
+      fontSize: this.fs(11), color: '#aaddff', fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setDepth(depth);
-    this.add.image(panelCx - 22, hpY + 7, 'icon_hp')
-      .setDisplaySize(16, 16).setDepth(depth);
-    this.playerHpText = this.add.text(panelCx - 6, hpY, `${gs.player.general.stats.hp}`, {
-      fontSize: '15px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+    this.add.image(panelCx - 22 * s, hpY + 7 * s, 'icon_hp')
+      .setDisplaySize(16 * s, 16 * s).setDepth(depth);
+    this.playerHpText = this.add.text(panelCx - 6 * s, hpY, `${gs.player.general.stats.hp}`, {
+      fontSize: this.fs(15), color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0, 0).setDepth(depth);
-    this.drawManaPips(panelCx - (gs.player.maxMana * 7), manaY, gs.player.mana, gs.player.maxMana, depth);
+    this.drawManaPips(panelCx, manaY, gs.player.mana, gs.player.maxMana, depth);
     this.add.text(panelCx, deckY, `HAND ${gs.player.hand.length}`, {
-      fontSize: '9px', color: '#aaaaaa', fontFamily: 'monospace',
+      fontSize: this.fs(9), color: '#aaaaaa', fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setDepth(depth);
 
     // --- Enemy (right panel) ---
@@ -177,31 +190,36 @@ export class CombatScene extends Phaser.Scene {
       .setDisplaySize(portraitSize, portraitSize)
       .setDepth(depth).setTint(0xff8888).setFlipX(true);
     this.add.text(panelCxR, nameY, 'VAATH THE IMMORTAL', {
-      fontSize: '9px', color: '#ffaaaa', fontFamily: 'monospace',
+      fontSize: this.fs(9), color: '#ffaaaa', fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setDepth(depth);
-    this.add.image(panelCxR - 22, hpY + 7, 'icon_hp')
-      .setDisplaySize(16, 16).setDepth(depth);
-    this.enemyHpText = this.add.text(panelCxR - 6, hpY, `${gs.enemy.general.stats.hp}`, {
-      fontSize: '15px', color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
+    this.add.image(panelCxR - 22 * s, hpY + 7 * s, 'icon_hp')
+      .setDisplaySize(16 * s, 16 * s).setDepth(depth);
+    this.enemyHpText = this.add.text(panelCxR - 6 * s, hpY, `${gs.enemy.general.stats.hp}`, {
+      fontSize: this.fs(15), color: '#ffffff', fontFamily: 'monospace', fontStyle: 'bold',
     }).setOrigin(0, 0).setDepth(depth);
-    this.drawManaPips(panelCxR - (gs.enemy.maxMana * 7), manaY, gs.enemy.mana, gs.enemy.maxMana, depth);
+    this.drawManaPips(panelCxR, manaY, gs.enemy.mana, gs.enemy.maxMana, depth);
     this.add.text(panelCxR, deckY, `HAND ${gs.enemy.hand.length}`, {
-      fontSize: '9px', color: '#aaaaaa', fontFamily: 'monospace',
+      fontSize: this.fs(9), color: '#aaaaaa', fontFamily: 'monospace',
     }).setOrigin(0.5, 0).setDepth(depth);
   }
 
-  private drawManaPips(startX: number, y: number, mana: number, maxMana: number, depth: number): void {
+  private drawManaPips(centerX: number, y: number, mana: number, maxMana: number, depth: number): void {
+    const s = this.uiScale;
+    const size = 10 * s;
+    const spacing = 11 * s;
+    const startX = centerX - ((MAX_MANA - 1) * spacing) / 2;
     for (let i = 0; i < MAX_MANA; i++) {
       const key = i < maxMana && i < mana ? 'icon_mana' : 'icon_mana_off';
-      const icon = this.add.image(startX + i * 11 + 5, y, key)
-        .setDisplaySize(10, 10).setDepth(depth);
+      const icon = this.add.image(startX + i * spacing, y, key)
+        .setDisplaySize(size, size).setDepth(depth);
       this.manaIcons.push(icon);
     }
   }
 
   private drawBottomBar(): void {
     const { width, height } = this.scale;
-    const barH = 80;
+    const s = this.uiScale;
+    const barH = Math.round(90 * s);
     const barY = height - barH / 2;
     const depth = 10;
 
@@ -209,29 +227,29 @@ export class CombatScene extends Phaser.Scene {
       .setDisplaySize(width, barH).setDepth(depth);
 
     // REPLACE button (left)
-    const replaceBtn = this.add.text(70, barY, 'REPLACE', {
-      fontSize: '12px', color: '#ffffff', fontFamily: 'monospace',
-      backgroundColor: '#223355', padding: { x: 8, y: 6 },
+    const replaceBtn = this.add.text(70 * s, barY, 'REPLACE', {
+      fontSize: this.fs(12), color: '#ffffff', fontFamily: 'monospace',
+      backgroundColor: '#223355', padding: { x: 8 * s, y: 6 * s },
     }).setOrigin(0.5, 0.5).setDepth(depth + 1).setInteractive({ useHandCursor: true });
     replaceBtn.on('pointerover', () => replaceBtn.setColor('#88ddff'));
     replaceBtn.on('pointerout', () => replaceBtn.setColor('#ffffff'));
 
     // Card slot placeholders (3 cards centred)
-    const cardW = 50;
-    const cardH = 66;
-    const gap = 12;
+    const cardW = 50 * s;
+    const cardH = 66 * s;
+    const gap = 12 * s;
     const totalW = 3 * cardW + 2 * gap;
     const startX = width / 2 - totalW / 2 + cardW / 2;
     for (let i = 0; i < 3; i++) {
       const cx = startX + i * (cardW + gap);
       const g = this.add.graphics().setDepth(depth + 1);
       g.lineStyle(1, 0x4466aa, 0.6);
-      g.strokeRoundedRect(cx - cardW / 2, barY - cardH / 2, cardW, cardH, 4);
+      g.strokeRoundedRect(cx - cardW / 2, barY - cardH / 2, cardW, cardH, 4 * s);
     }
 
     // END TURN button (right)
-    this.endTurnImage = this.add.image(width - 80, barY, 'btn_end_mine')
-      .setDisplaySize(130, 44).setDepth(depth + 1)
+    this.endTurnImage = this.add.image(width - 80 * s, barY, 'btn_end_mine')
+      .setDisplaySize(130 * s, 44 * s).setDepth(depth + 1)
       .setInteractive({ useHandCursor: true })
       .on('pointerdown', () => this.endPlayerTurn())
       .on('pointerover', () => this.endTurnImage.setAlpha(0.85))
@@ -249,12 +267,14 @@ export class CombatScene extends Phaser.Scene {
     for (const icon of this.manaIcons) icon.destroy();
     this.manaIcons = [];
     const { width } = this.scale;
+    const s = this.uiScale;
     const depth = 10;
     const panelCx = this.gridLeftEdge / 2;
     const panelCxR = (this.gridRightEdge + width) / 2;
-    const manaY = 56 + Math.min(panelCx * 1.4, 100) / 2 + 10 + 18 + 22;
-    this.drawManaPips(panelCx - (gs.player.maxMana * 7), manaY, gs.player.mana, gs.player.maxMana, depth);
-    this.drawManaPips(panelCxR - (gs.enemy.maxMana * 7), manaY, gs.enemy.mana, gs.enemy.maxMana, depth);
+    const portraitSize = Math.min(panelCx * 1.4, 100 * s);
+    const manaY = Math.round(56 * s) + portraitSize / 2 + 10 * s + 18 * s + 22 * s;
+    this.drawManaPips(panelCx, manaY, gs.player.mana, gs.player.maxMana, depth);
+    this.drawManaPips(panelCxR, manaY, gs.enemy.mana, gs.enemy.maxMana, depth);
   }
 
   // ---------------------------------------------------------------------------
@@ -364,17 +384,20 @@ export class CombatScene extends Phaser.Scene {
 
   private showTooltip(unit: Unit): void {
     this.hideTooltip();
+    const s = this.uiScale;
+    const panelH = 72 * s;
     const { x, y } = this.cellToPixel(unit.position.col, unit.position.row);
-    const panel = this.add.image(0, 0, 'status_panel').setDisplaySize(120, 72);
+    const panel = this.add.image(0, 0, 'status_panel').setDisplaySize(120 * s, panelH);
     const lines = [
       unit.definitionId,
       `ATK ${unit.stats.attack}   HP ${unit.stats.hp}/${unit.stats.maxHp}`,
       `MOV ${unit.stats.moveRange}   RNG ${unit.stats.attackRange}`,
     ];
     const text = this.add.text(0, 0, lines, {
-      fontSize: '9px', color: '#ffffff', fontFamily: 'monospace', align: 'center',
+      fontSize: this.fs(9), color: '#ffffff', fontFamily: 'monospace', align: 'center',
     }).setOrigin(0.5);
-    const ty = y - this.tileW * 0.6;
+    // Float the panel fully above the (now centred) sprite.
+    const ty = y - this.tileH * 0.5 - panelH / 2;
     this.tooltipContainer = this.add.container(x, ty, [panel, text]).setDepth(15);
   }
 
@@ -391,7 +414,7 @@ export class CombatScene extends Phaser.Scene {
     for (const unit of this.gameState.units) {
       const { x, y } = this.cellToPixel(unit.position.col, unit.position.row);
       const unitKey = unit.faction === 'player' ? 'f1_general' : 'f2_general';
-      const spriteY = y - this.tileH * 0.5;
+      const spriteY = y; // centre sprite in its cell
       const sprite = createUnitSprite(this, unitKey, x, spriteY)
         .setDisplaySize(this.tileW, this.tileW)
         .setDepth(unit.position.col + unit.position.row + 0.5);
@@ -407,34 +430,40 @@ export class CombatScene extends Phaser.Scene {
   // ---------------------------------------------------------------------------
 
   private updateStatDisplay(unit: Unit): void {
+    const s = this.uiScale;
     const { x, y } = this.cellToPixel(unit.position.col, unit.position.row);
-    const badgeY = y + this.tileH * 0.4;
+    // Badge sits at the unit's feet; depth above sprites so it stays visible.
+    const badgeY = y + this.tileH * 0.45;
     const atkX = x - this.tileW * 0.15;
     const hpX  = x + this.tileW * 0.02;
+    const off = 12 * s;
+    const iconOff = 5 * s;
+    const iconSize = 10 * s;
+    const badgeDepth = 14;
 
     const existingHp  = this.hpLabels.get(unit.id);
     const existingAtk = this.atkLabels.get(unit.id);
 
     if (existingHp && existingAtk) {
-      existingHp.setText(`${unit.stats.hp}`).setPosition(hpX + 12, badgeY);
-      this.hpIcons.get(unit.id)?.setPosition(hpX, badgeY + 5);
-      existingAtk.setText(`${unit.stats.attack}`).setPosition(atkX + 12, badgeY);
-      this.atkIcons.get(unit.id)?.setPosition(atkX, badgeY + 5);
+      existingHp.setText(`${unit.stats.hp}`).setPosition(hpX + off, badgeY);
+      this.hpIcons.get(unit.id)?.setPosition(hpX, badgeY + iconOff);
+      existingAtk.setText(`${unit.stats.attack}`).setPosition(atkX + off, badgeY);
+      this.atkIcons.get(unit.id)?.setPosition(atkX, badgeY + iconOff);
     } else {
-      const hpIcon = this.add.image(hpX, badgeY + 5, 'icon_hp')
-        .setDisplaySize(10, 10).setDepth(7);
+      const hpIcon = this.add.image(hpX, badgeY + iconOff, 'icon_hp')
+        .setDisplaySize(iconSize, iconSize).setDepth(badgeDepth);
       this.hpIcons.set(unit.id, hpIcon);
-      const hpLabel = this.add.text(hpX + 12, badgeY, `${unit.stats.hp}`, {
-        fontSize: '10px', color: '#ff8888', fontFamily: 'monospace',
-      }).setOrigin(0, 0).setDepth(7);
+      const hpLabel = this.add.text(hpX + off, badgeY, `${unit.stats.hp}`, {
+        fontSize: this.fs(10), color: '#ff8888', fontFamily: 'monospace',
+      }).setOrigin(0, 0).setDepth(badgeDepth);
       this.hpLabels.set(unit.id, hpLabel);
 
-      const atkIcon = this.add.image(atkX, badgeY + 5, 'icon_atk')
-        .setDisplaySize(10, 10).setDepth(7);
+      const atkIcon = this.add.image(atkX, badgeY + iconOff, 'icon_atk')
+        .setDisplaySize(iconSize, iconSize).setDepth(badgeDepth);
       this.atkIcons.set(unit.id, atkIcon);
-      const atkLabel = this.add.text(atkX + 12, badgeY, `${unit.stats.attack}`, {
-        fontSize: '10px', color: '#ffdd44', fontFamily: 'monospace',
-      }).setOrigin(0, 0).setDepth(7);
+      const atkLabel = this.add.text(atkX + off, badgeY, `${unit.stats.attack}`, {
+        fontSize: this.fs(10), color: '#ffdd44', fontFamily: 'monospace',
+      }).setOrigin(0, 0).setDepth(badgeDepth);
       this.atkLabels.set(unit.id, atkLabel);
     }
   }
@@ -490,7 +519,7 @@ export class CombatScene extends Phaser.Scene {
     const sprite = this.unitSprites.get(unit.id);
     if (sprite) {
       const { x, y } = this.cellToPixel(pos.col, pos.row);
-      const spriteY = y - this.tileH * 0.5;
+      const spriteY = y; // centre sprite in its cell
       const unitKey = this.unitKeyMap.get(unit.id) ?? '';
       playUnitAnim(sprite, unitKey, 'run', false);
       this.tweens.add({
