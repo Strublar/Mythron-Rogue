@@ -9,7 +9,9 @@
 
 import Phaser from 'phaser';
 import { GameState, TurnPhase, Unit, Position, CardInstance } from '../../types';
-import { createInitialGameState, drawCard } from '../../engine/GameState';
+import { createInitialGameState } from '../../engine/GameState';
+import { ActionSystem } from '../../engine/ActionSystem';
+import { AIController } from '../../ai/AIController';
 import { reachableTiles, attackableTargets, cardinalNeighbors, unitAt } from '../../engine/BoardState';
 import { getCardDef, targetingFor, SUMMON_ATLASES } from '../../engine/CardDatabase';
 import { resolveCard } from '../../engine/CardResolver';
@@ -30,6 +32,8 @@ export class CombatScene extends Phaser.Scene {
   private gridLeftEdge!: number;
   private gridRightEdge!: number;
   private gameState!: GameState;
+  private actionSystem!: ActionSystem;
+  private aiController!: AIController;
   private unitSprites: Map<string, Phaser.GameObjects.Sprite> = new Map();
   private unitKeyMap: Map<string, string> = new Map();
   private currentPhase: TurnPhase = 'PLAYER_TURN';
@@ -134,6 +138,8 @@ export class CombatScene extends Phaser.Scene {
     });
 
     this.gameState = createInitialGameState();
+    this.actionSystem = new ActionSystem(this.gameState);
+    this.aiController = new AIController(this.actionSystem);
     this.renderUnits();
     this.drawPlayerHUDs();
     this.drawBottomBar();
@@ -419,28 +425,76 @@ export class CombatScene extends Phaser.Scene {
   }
 
   startPlayerTurn(): void {
+    // Mana ramp, draw and unit reset are handled by ActionSystem.endTurn when the
+    // enemy hands the turn back (see runAITurn). This method only drives the UI.
     this.currentPhase = 'PLAYER_TURN';
     this.turnIndicator.setText('YOUR TURN').setColor('#88bbff');
     this.endTurnImage.setTexture('btn_end_mine').setAlpha(1).setInteractive({ useHandCursor: true });
     this.playerActedThisTurn = false;
-    for (const unit of this.gameState.units) {
-      if (unit.faction === 'player') {
-        unit.hasMoved = false;
-        unit.hasAttacked = false;
-      }
-    }
-    // Increment mana (Duelyst: +1 per turn, cap 9)
-    const ps = this.gameState.player;
-    ps.maxMana = Math.min(ps.maxMana + 1, MAX_MANA);
-    ps.mana = ps.maxMana;
-    drawCard(ps);
     this.refreshHUD();
     this.renderHand();
     this.showTurnNotification('notif_yours');
   }
 
-  private runAITurn(_playerActed: boolean): void {
-    this.time.delayedCall(800, () => this.startPlayerTurn());
+  private async runAITurn(_playerActed: boolean): Promise<void> {
+    // Hand the turn to the enemy: ActionSystem.endTurn resets enemy units, ramps
+    // enemy mana (+1, cap 9) and draws a card.
+    this.actionSystem.dispatch({ type: 'endTurn' });
+    this.syncFromState();
+
+    // Greedy AI plays out its whole turn, then hands the turn back — its trailing
+    // endTurn resets player units, ramps player mana and draws the player's card.
+    await this.aiController.takeTurn({
+      delayMs: 500,
+      onAction: () => this.syncFromState(),
+    });
+    this.syncFromState();
+
+    if (this.gameOver) return;
+    this.startPlayerTurn();
+  }
+
+  /** Reconcile the board sprites/HUD with the current game state after AI actions. */
+  private syncFromState(): void {
+    const gs = this.gameState;
+    const alive = new Set(gs.units.map(u => u.id));
+
+    for (const unit of gs.units) {
+      const sprite = this.unitSprites.get(unit.id);
+      if (!sprite) {
+        this.spawnUnitSprite(unit);
+        continue;
+      }
+      const { x, y } = this.cellToPixel(unit.position.col, unit.position.row);
+      sprite.setPosition(x, y).setDepth(unit.position.col + unit.position.row + 0.5);
+      this.updateStatDisplay(unit);
+    }
+
+    for (const id of [...this.unitSprites.keys()]) {
+      if (alive.has(id)) continue;
+      this.destroyUnitVisuals(id);
+    }
+
+    this.refreshHUD();
+
+    if (!this.gameOver) {
+      if (gs.player.general.stats.hp <= 0) this.showGameOver('DEFEAT');
+      else if (gs.enemy.general.stats.hp <= 0) this.showGameOver('VICTORY');
+    }
+  }
+
+  private destroyUnitVisuals(id: string): void {
+    this.unitSprites.get(id)?.destroy();
+    this.unitSprites.delete(id);
+    this.unitKeyMap.delete(id);
+    this.hpLabels.get(id)?.destroy();
+    this.hpLabels.delete(id);
+    this.hpIcons.get(id)?.destroy();
+    this.hpIcons.delete(id);
+    this.atkLabels.get(id)?.destroy();
+    this.atkLabels.delete(id);
+    this.atkIcons.get(id)?.destroy();
+    this.atkIcons.delete(id);
   }
 
   private showTurnNotification(key: 'notif_yours' | 'notif_enemy'): void {
