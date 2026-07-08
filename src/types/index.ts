@@ -64,6 +64,8 @@ export interface StatusEffect {
 
 export type CardType = 'unit' | 'spell' | 'artifact';
 
+export type CardRarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythron';
+
 /** Summon a unit onto an empty tile next to a friendly unit */
 export interface SummonEffect {
   kind: 'summon';
@@ -92,6 +94,8 @@ export interface CardDefinition {
   id: string;
   name: string;
   type: CardType;
+  /** Rarity gem strip shown on the card frame. Defaults to 'common' when omitted. */
+  rarity?: CardRarity;
   manaCost: number;
   description: string;
   effect: CardEffect;

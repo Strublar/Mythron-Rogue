@@ -577,20 +577,29 @@ export class CombatScene extends Phaser.Scene {
   private showTooltip(unit: Unit): void {
     this.hideTooltip();
     const s = this.uiScale;
-    const panelH = 72 * s;
     const { x, y } = this.cellToPixel(unit.position.col, unit.position.row);
-    const panel = this.add.image(0, 0, 'status_panel').setDisplaySize(120 * s, panelH);
+
+    // Duelyst carrot bubble: 'tooltip_down' points downward at the unit below it.
+    // NEAREST filter keeps the pixel art crisp (Duelyst: setAntiAlias(false)).
+    this.textures.get('tooltip_down').setFilter(Phaser.Textures.FilterMode.NEAREST);
+    const bubble = this.add.image(0, 0, 'tooltip_down').setScale(s);
+    const bubbleH = bubble.displayHeight;
+
     const lines = [
       unit.definitionId,
       `ATK ${unit.stats.attack}   HP ${unit.stats.hp}/${unit.stats.maxHp}`,
       `MOV ${unit.stats.moveRange}   RNG ${unit.stats.attackRange}`,
     ];
-    const text = this.add.text(0, 0, lines, {
-      fontSize: this.fs(9), color: '#ffffff', fontFamily: 'monospace', align: 'center',
+    // White centred Lato text (INSTRUCTION_NODE_TEXT_COLOR), wrapped to the bubble
+    // body; nudged up by the carrot height so it sits in the speech area.
+    const text = this.add.text(0, -bubbleH * 0.12, lines, {
+      fontSize: this.fs(9), color: '#ffffff', fontFamily: 'Lato', align: 'center',
+      wordWrap: { width: Math.min(214 * s, bubble.displayWidth * 0.82) },
     }).setOrigin(0.5);
-    // Float the panel fully above the (now centred) sprite.
-    const ty = y - this.tileH * 0.5 - panelH / 2;
-    this.tooltipContainer = this.add.container(x, ty, [panel, text]).setDepth(15);
+
+    // Float the bubble fully above the (now centred) sprite; carrot points at it.
+    const ty = y - this.tileH * 0.5 - bubbleH / 2;
+    this.tooltipContainer = this.add.container(x, ty, [bubble, text]).setDepth(15);
   }
 
   private hideTooltip(): void {

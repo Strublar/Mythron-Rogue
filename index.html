@@ -8,7 +8,22 @@
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <title>Mythron Rogue</title>
+    <!-- Duelyst UI font (CC0). Preload so Phaser text renders in Lato immediately. -->
+    <link rel="preload" as="font" type="font/ttf" href="/resources/fonts/Lato-Regular.ttf" crossorigin />
+    <link rel="preload" as="font" type="font/ttf" href="/resources/fonts/Lato-Bold.ttf" crossorigin />
     <style>
+      @font-face {
+        font-family: 'Lato';
+        font-weight: 400;
+        font-display: block;
+        src: url('/resources/fonts/Lato-Regular.ttf') format('truetype');
+      }
+      @font-face {
+        font-family: 'Lato';
+        font-weight: 700;
+        font-display: block;
+        src: url('/resources/fonts/Lato-Bold.ttf') format('truetype');
+      }
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
       /* TODO: add loading screen styles */
