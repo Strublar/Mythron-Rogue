@@ -1,10 +1,19 @@
-// TODO: Drives the enemy turn using greedy scoring.
+// Drives the enemy turn using greedy scoring.
 // Algorithm: generate all legal actions → score each → dispatch best → repeat until endTurn is best.
-// CombatScene calls takeTurn() at the start of each enemy turn.
-// Add artificial delay between actions so the player can follow what the AI is doing.
+// CombatScene calls takeTurn() at the start of each enemy turn; pass a delay for readable playback.
 
 import { ActionSystem } from '../engine/ActionSystem';
+import { GameAction, GameState } from '../types';
 import { scoreAllActions, ScoreWeights } from './GreedyScorer';
+
+export interface TakeTurnOptions {
+  /** Pause between actions (ms) so the player can follow the AI. Default 0. */
+  delayMs?: number;
+  /** Called after each dispatched action (for VFX / sprite sync). */
+  onAction?: (action: GameAction, state: GameState) => void;
+}
+
+const SAFETY_LIMIT = 50; // guard against pathological infinite loops
 
 export class AIController {
   private actionSystem: ActionSystem;
@@ -15,25 +24,41 @@ export class AIController {
     this.weights = weights;
   }
 
-  /** Execute the full enemy turn synchronously (call from CombatScene) */
-  takeTurn(): void {
-    // TODO: add per-action animation delay (e.g. 400ms between actions) for readability
-    // TODO: guard: only run if activePlayer === 'enemy'
+  /** Execute the full enemy turn. Returns the ordered actions taken. */
+  async takeTurn(opts: TakeTurnOptions = {}): Promise<GameAction[]> {
+    const { delayMs = 0, onAction } = opts;
+    const taken: GameAction[] = [];
 
-    let safetyLimit = 50; // prevent infinite loops during development
+    if (this.actionSystem.getState().activePlayer !== 'enemy') return taken;
 
-    while (safetyLimit-- > 0) {
+    let safety = SAFETY_LIMIT;
+    while (safety-- > 0) {
       const state = this.actionSystem.getState();
-      const legal = this.actionSystem.generateLegalActions();
-      const scored = scoreAllActions(legal, state, this.weights);
+      if (this.generalDead(state)) break;
 
-      const best = scored[0];
-      if (!best || best.action.type === 'endTurn') {
-        this.actionSystem.dispatch({ type: 'endTurn' });
-        break;
-      }
+      const legal = this.actionSystem.generateLegalActions();
+      const best = scoreAllActions(legal, state, this.weights)[0];
+
+      if (!best || best.action.type === 'endTurn') break;
 
       this.actionSystem.dispatch(best.action);
+      taken.push(best.action);
+      onAction?.(best.action, this.actionSystem.getState());
+      if (delayMs > 0) await delay(delayMs);
     }
+
+    // Don't hand the turn back if the game is already decided.
+    if (!this.generalDead(this.actionSystem.getState())) {
+      this.actionSystem.dispatch({ type: 'endTurn' });
+    }
+    return taken;
   }
+
+  private generalDead(state: GameState): boolean {
+    return state.player.general.stats.hp <= 0 || state.enemy.general.stats.hp <= 0;
+  }
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
