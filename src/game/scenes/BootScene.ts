@@ -32,6 +32,21 @@ export class BootScene extends Phaser.Scene {
     this.load.image('notif_yours',   'resources/ui/notification_your_turn.png');
     this.load.image('notif_enemy',   'resources/ui/notification_enemy_turn.png');
     this.load.image('status_panel',  'resources/ui/status_panel.png');
+    // Duelyst hand card frames (neutral), rarity strips, stat gems + directional tooltip bubbles.
+    this.load.image('card_frame_unit',     'resources/card_backgrounds/neutral_unit.png');
+    this.load.image('card_frame_spell',    'resources/card_backgrounds/neutral_spell.png');
+    this.load.image('card_frame_artifact', 'resources/card_backgrounds/neutral_artifact.png');
+    this.load.image('rarity_common',    'resources/ui/collection_card_rarity_common.png');
+    this.load.image('rarity_rare',      'resources/ui/collection_card_rarity_rare.png');
+    this.load.image('rarity_epic',      'resources/ui/collection_card_rarity_epic.png');
+    this.load.image('rarity_legendary', 'resources/ui/collection_card_rarity_legendary.png');
+    this.load.image('rarity_mythron',   'resources/ui/collection_card_rarity_mythron.png');
+    this.load.image('stats_atk_bg', 'resources/card_backgrounds/stats_atk_bg.png');
+    this.load.image('stats_hp_bg',  'resources/card_backgrounds/stats_hp_bg.png');
+    this.load.image('tooltip_up',    'resources/tutorial/tooltip_up.png');
+    this.load.image('tooltip_down',  'resources/tutorial/tooltip_down.png');
+    this.load.image('tooltip_left',  'resources/tutorial/tooltip_left.png');
+    this.load.image('tooltip_right', 'resources/tutorial/tooltip_right.png');
   }
 
   private loadUnitAtlases(): void {
