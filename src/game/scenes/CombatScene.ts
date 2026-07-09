@@ -13,12 +13,13 @@ import { createInitialGameState } from '../../engine/GameState';
 import { ActionSystem } from '../../engine/ActionSystem';
 import { AIController } from '../../ai/AIController';
 import { reachableTiles, attackableTargets, cardinalNeighbors, unitAt } from '../../engine/BoardState';
-import { getCardDef, targetingFor, SUMMON_ATLASES } from '../../engine/CardDatabase';
+import { getCardDef, getCardDefByUnitKey, targetingFor, SUMMON_ATLASES } from '../../engine/CardDatabase';
 import { resolveCard } from '../../engine/CardResolver';
 import { createUnitSprite, playUnitAnim, UnitAnimKey } from '../UnitAnimator';
 import { BoardTileManager } from '../BoardTileManager';
 import { TileHighlightLayer } from '../TileHighlightLayer';
 import { HandRenderer } from '../HandRenderer';
+import { buildCardFace, cardAspect } from '../CardFace';
 
 const COLS = 9;
 const ROWS = 5;
@@ -576,6 +577,36 @@ export class CombatScene extends Phaser.Scene {
 
   private showTooltip(unit: Unit): void {
     this.hideTooltip();
+    // Summoned minions have a matching card — show the full card face (as in hand).
+    // Generals (no card def) fall back to a compact stat bubble.
+    const def = getCardDefByUnitKey(unit.definitionId);
+    if (def) this.showCardTooltip(unit, def);
+    else this.showBubbleTooltip(unit);
+  }
+
+  private showCardTooltip(unit: Unit, def: NonNullable<ReturnType<typeof getCardDef>>): void {
+    const sc = this.uiScale;
+    const { x, y } = this.cellToPixel(unit.position.col, unit.position.row);
+
+    // Card preview: ~2.6 tiles tall, native frame aspect.
+    const cardH = this.tileH * 2.6;
+    const cardW = cardH * cardAspect(this);
+    const parts = buildCardFace(this, def, cardW, cardH, sc, {
+      attack: unit.stats.attack,
+      hp: unit.stats.hp,
+    });
+
+    // Float fully above the unit; clamp within the viewport.
+    let ty = y - this.tileH * 0.5 - cardH / 2;
+    let tx = x;
+    if (ty - cardH / 2 < 4) ty = y + this.tileH * 0.5 + cardH / 2; // flip below if no room above
+    tx = Phaser.Math.Clamp(tx, cardW / 2 + 4, this.scale.width - cardW / 2 - 4);
+    ty = Phaser.Math.Clamp(ty, cardH / 2 + 4, this.scale.height - cardH / 2 - 4);
+
+    this.tooltipContainer = this.add.container(tx, ty, parts).setDepth(15);
+  }
+
+  private showBubbleTooltip(unit: Unit): void {
     const s = this.uiScale;
     const { x, y } = this.cellToPixel(unit.position.col, unit.position.row);
 

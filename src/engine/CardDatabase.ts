@@ -67,6 +67,13 @@ export function getCardDef(definitionId: string): CardDefinition | undefined {
   return CARD_DB[definitionId];
 }
 
+/** Find the summon card whose minion matches a board unit's definitionId (unitKey). */
+export function getCardDefByUnitKey(unitKey: string): CardDefinition | undefined {
+  return Object.values(CARD_DB).find(
+    d => d.effect.kind === 'summon' && d.effect.unitKey === unitKey,
+  );
+}
+
 /** Where a card may be played — drives target-tile highlighting. */
 export function targetingFor(def: CardDefinition): CardTargeting {
   switch (def.effect.kind) {
