@@ -38,13 +38,30 @@ function standardUnit(key: string): UnitDef {
 // BootScene preloads exactly these atlases, so keep it to what the fight actually uses.
 export const UNIT_DEFS: Record<string, UnitDef> = Object.fromEntries(
   [
+    // tanks
     'f1_ironcliffeguardian',
     'f1_silvermanevanguard',
+    'neutral_primusshieldmaster',
+    'f6_tundraguardian',
+    'f3_irondervish',
+    // dps
     'f1_sunforgelancer',
     'neutral_arakiheadhunter',
     'f3_pyromancer',
+    'f1_elyxstormblade',
+    'f4_nightsorrow',
+    'neutral_voidhunter',
+    'f2_stormkage',
+    'neutral_whitewidow',
+    'f5_mankatorwarbeast',
+    // healers
     'neutral_healingmystic',
     'f1_sunriser',
+    'f3_aymarahealer',
+    'neutral_bloodstonealchemist',
+    'neutral_spiritscribe',
+    'neutral_mercshieldoracle',
+    // bosses
     'boss_shadowlord',
   ].map(key => [key, standardUnit(key)]),
 );

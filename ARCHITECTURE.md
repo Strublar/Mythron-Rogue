@@ -24,7 +24,9 @@
     ├── types/
     │   └── index.ts                    # ALL shared types/interfaces (source of truth)
     ├── data/
-    │   ├── heroes.ts                   # PARTY roster + the 3 archetype abilities + threat tuning
+    │   ├── heroes.ts                   # ROSTER (20 heroes) + heroesByRole + DEFAULT_PARTY + threat tuning
+    │   ├── abilities.ts                # One Ability per hero — the roster's identity
+    │   ├── statMath.ts                 # grow()/haste() percent math, shared by boons and buffs
     │   ├── boons.ts                    # Boon pool, roll, effect text, applyBoons(party, boons)
     │   └── bosses.ts                   # Boss definitions
     ├── engine/
@@ -41,11 +43,13 @@
         ├── HeroTooltip.ts              # Long-press stats card: hero stats + ability text/values
         ├── HeroInspector.ts            # Shared long-press-to-inspect: timer, drag guard, slot probes
         ├── BoonCard.ts                 # Selectable boon offer card + shared boon palette
+        ├── HeroCard.ts                 # Roster grid card: portrait, name, stat strip, tap/hold
         ├── BoonListPanel.ts            # "BOONS" overlay: every boon owned this run, stacked
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
         └── scenes/
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
             ├── MainMenuScene.ts        # Title + FIGHT BOSS button
+            ├── CharacterSelectScene.ts # Pre-run party builder on the battlefield slots
             ├── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
             └── InterludeScene.ts       # Between-fights boon draft in the boss zone (+ hero long-press probes)
 ```
@@ -55,7 +59,8 @@
 ```
 main.ts
   └── PhaserGame (canvas, 720×1280 portrait)
-        BootScene → MainMenuScene → BossFightScene
+        BootScene → MainMenuScene → CharacterSelectScene → BossFightScene
+        CharacterSelectScene hands BossFightScene.init the chosen HeroDef[]
         BossFightScene owns:
           FightEngine        (pure state; emits 'fight' FightEvents)
           CombatantView × 8  (1 boss + 7 heroes)
@@ -69,6 +74,20 @@ main.ts
   party's three rows in the bottom half.
 - **Party:** 7 heroes — 2 tanks (front), 3 dps (mid), 2 heals (back). `HERO_SLOTS`
   in `layout.ts` is the single source of slot positions; `withSlots(defs)` hands them out.
+- **Party selection.** `ROSTER` holds 20 heroes (5 tanks / 9 dps / 6 heals), each with its
+  own stats and its own `Ability`. `CharacterSelectScene` seeds from `DEFAULT_PARTY`, draws
+  the picks at their real `HERO_SLOTS`, and opens a role grid in the boss zone on tap. It
+  passes the chosen `HeroDef[]` to `BossFightScene.init`, which feeds `new RunState(party)`.
+  RETRY after a defeat returns here — a new run is a new party.
+- **Abilities** are pure data (`src/data/abilities.ts`). Primitives the engine resolves:
+  `damage`, `heal`, `partyHeal`, `selfHeal`, `selfShield`, `allyShield`, `taunt`,
+  `lifestealPct`, `bossStunMs`, `executeBelowPct`/`executeBonus`, `threatFlat`, `dot`
+  (bleeds the boss over time) and `buff` (timed `attackPct`/`attackSpeedPct` on
+  self/ally/party). Adding a field means adding a line to `abilityEffects` in
+  `HeroTooltip.ts` — that function is the only place ability copy is written.
+- **Buffs vs boons.** Boons are permanent and bake into `HeroDef` via `applyBoons`; buffs
+  are temporary and ride on `HeroState.buffs`, folded in by `heroAttack`/`heroInterval` at
+  tick time. Both use `grow`/`haste` from `src/data/statMath.ts`.
 - **Real-time, but the fight only starts on the first ability cast.** Until then every
   actor idles (`FightEngine.started`). Heroes then auto-attack (healers auto-heal the
   lowest-HP ally). During that idle window a long press on a hero opens its stats card;
@@ -77,8 +96,9 @@ main.ts
   (`ROLE_THREAT_MULTIPLIER`); the boss always swings at the highest-threat living hero.
   A tank ability is a taunt: it wipes party threat and plants `TAUNT_THREAT` on the caster.
 - **Boons.** `RunState` holds every boon picked this run; `applyBoons` re-derives the whole
-  roster from `PARTY` (never mutating it) and `FightEngine.startNextBoss` swaps the new defs
-  in. Percentages are additive across stacks; speed/cooldown bonuses are haste (`ms / 1+pct`).
+  roster from the chosen party (never mutating it) and `FightEngine.startNextBoss` swaps the
+  new defs in. Percentages are additive across stacks; speed/cooldown bonuses are haste
+  (`ms / 1+pct`). `abilityPowerPct` scales every ability payload, dot damage included.
 - **Between fights.** A cleared boss freezes `BossFightScene` (`frozen` stops the sim, input
   goes off) and launches `InterludeScene`, which offers 3 boons. The scene is *not* paused —
   a paused scene stops its UpdateList, and the party must keep idling under the boon window.
@@ -88,8 +108,8 @@ main.ts
   The interlude draws no full-screen overlay — only a result window in the vacated boss zone —
   so the party rows stay visible. The frozen scene takes no input, so the interlude owns its
   own invisible probe zones over `HERO_SLOTS` (`HeroInspector.addProbes`).
-- **Abilities** are cast by dragging a hero onto a target: boss for tanks/dps, an ally
-  for healers. Rejected drops cost no cooldown.
+- **Casting.** Drag a hero onto the target its ability's `targetKind` names — the boss or an
+  ally. Role never gates it. Rejected drops cost no cooldown.
 - **Engine never touches sprites.** `FightEngine` emits `FightEvent`s; views react.
 - **Atlas frames are untrimmed square canvases** of varying size that share one art
   scale — use the flat `HERO_SCALE` / `BOSS_SCALE`, never per-unit height normalisation.

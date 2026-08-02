@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { Ability, HeroDef, HeroRole } from '../types';
+import type { Ability, AbilityBuff, HeroDef, HeroRole } from '../types';
 import { GAME_HEIGHT, GAME_WIDTH, ROLE_COLOR } from './layout';
 
 const PANEL_W = 420;
@@ -19,13 +19,45 @@ const GOLD = '#ffd76b';
 const secs = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
 const hex = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
 
+const BUFF_TARGET_LABEL: Record<AbilityBuff['target'], string> = {
+  self: 'the caster',
+  ally: 'the target ally',
+  party: 'the whole party',
+};
+
 /** Effect lines built straight from an ability's numeric fields — no hardcoded copy. */
 export function abilityEffects(a: Ability): string[] {
   const lines: string[] = [];
   if (a.damage) lines.push(`Deals ${a.damage} damage to the boss.`);
+  if (a.executeBonus && a.executeBelowPct !== undefined) {
+    lines.push(`Execute: +${a.executeBonus} damage while the boss is below ${a.executeBelowPct}% HP.`);
+  }
+  if (a.dot) {
+    lines.push(
+      `Burns the boss for ${a.dot.damage} every ${secs(a.dot.tickMs)} over ${secs(a.dot.durationMs)}.`,
+    );
+  }
+  if (a.lifestealPct) lines.push(`Heals the caster for ${a.lifestealPct}% of the damage dealt.`);
+  if (a.bossStunMs) lines.push(`Staggers the boss, delaying its next swing by ${secs(a.bossStunMs)}.`);
   if (a.heal) lines.push(`Heals the target ally for ${a.heal}.`);
+  if (a.partyHeal) lines.push(`Heals every living hero for ${a.partyHeal}.`);
+  if (a.selfHeal) lines.push(`Heals the caster for ${a.selfHeal}.`);
   if (a.selfShield) lines.push(`Shields the caster for ${a.selfShield}.`);
+  if (a.allyShield) lines.push(`Shields the target ally for ${a.allyShield}.`);
+  if (a.buff) {
+    const parts: string[] = [];
+    if (a.buff.attackPct) parts.push(`+${a.buff.attackPct}% attack`);
+    if (a.buff.attackSpeedPct) parts.push(`+${a.buff.attackSpeedPct}% attack speed`);
+    lines.push(`Grants ${BUFF_TARGET_LABEL[a.buff.target]} ${parts.join(' and ')} for ${secs(a.buff.durationMs)}.`);
+  }
   if (a.taunt) lines.push('Taunt: wipes party threat and pulls the boss onto the caster.');
+  if (a.threatFlat) {
+    lines.push(
+      a.threatFlat < 0
+        ? `Sheds ${-a.threatFlat} threat from the caster.`
+        : `Adds ${a.threatFlat} threat to the caster.`,
+    );
+  }
   return lines;
 }
 

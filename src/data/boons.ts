@@ -1,4 +1,5 @@
 import type { BoonDef, BoonEffect, BoonScope, HeroDef, HeroRole } from '../types';
+import { grow, haste } from './statMath';
 
 export const SCOPE_LABEL: Record<BoonScope, string> = {
   tank: 'Tanks',
@@ -61,17 +62,6 @@ function sumPct(boons: BoonDef[], role: HeroRole, key: keyof BoonEffect): number
   );
 }
 
-function grow(v: number, pct: number): number;
-function grow(v: number | undefined, pct: number): number | undefined;
-function grow(v: number | undefined, pct: number): number | undefined {
-  return v === undefined ? undefined : Math.round(v * (1 + pct / 100));
-}
-
-/** Haste: a percent bonus shortens the interval instead of lengthening it. */
-function haste(ms: number, pct: number): number {
-  return Math.round(ms / (1 + pct / 100));
-}
-
 /** Derives the buffed roster. Never mutates the base defs — returns fresh objects. */
 export function applyBoons(party: HeroDef[], boons: BoonDef[]): HeroDef[] {
   if (boons.length === 0) return party;
@@ -90,6 +80,11 @@ export function applyBoons(party: HeroDef[], boons: BoonDef[]): HeroDef[] {
         damage: grow(a.damage, power),
         heal: grow(a.heal, power),
         selfShield: grow(a.selfShield, power),
+        allyShield: grow(a.allyShield, power),
+        partyHeal: grow(a.partyHeal, power),
+        selfHeal: grow(a.selfHeal, power),
+        executeBonus: grow(a.executeBonus, power),
+        dot: a.dot && { ...a.dot, damage: grow(a.dot.damage, power) },
       },
     };
   });

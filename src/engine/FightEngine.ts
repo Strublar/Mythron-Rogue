@@ -1,6 +1,9 @@
 import Phaser from 'phaser';
 import { ROLE_THREAT_MULTIPLIER, TAUNT_THREAT } from '../data/heroes';
-import type { BossDef, BossState, FightEvent, FightOutcome, HeroDef, HeroRole, HeroState } from '../types';
+import { haste } from '../data/statMath';
+import type {
+  Ability, BossDef, BossState, FightEvent, FightOutcome, HeroDef, HeroRole, HeroState,
+} from '../types';
 
 /** Sentinel target id meaning "the boss" for ability casts. */
 export const BOSS_TARGET = 'boss';
@@ -11,6 +14,21 @@ const ROLE_AGGRO_PRIORITY: Record<HeroRole, number> = { tank: 2, dps: 1, heal: 0
 /** Stagger initial cooldowns so the whole party doesn't swing on the same frame. */
 function staggeredAttackCd(def: HeroDef, index: number, partySize: number): number {
   return (def.attackIntervalMs / partySize) * index;
+}
+
+/** Running buffs stack additively, exactly like boons — boons bake into `def`, buffs ride on top. */
+function buffPct(h: HeroState, key: 'attackPct' | 'attackSpeedPct'): number {
+  return h.buffs.reduce((total, b) => total + b[key], 0);
+}
+
+/** Auto-attack damage (heal, for a healer) with running buffs folded in. */
+export function heroAttack(h: HeroState): number {
+  return Math.round(h.def.attack * (1 + buffPct(h, 'attackPct') / 100));
+}
+
+/** Swing interval with running haste folded in. */
+export function heroInterval(h: HeroState): number {
+  return haste(h.def.attackIntervalMs, buffPct(h, 'attackSpeedPct'));
 }
 
 export function lowestHpAlly(heroes: HeroState[]): HeroState | undefined {
@@ -45,8 +63,11 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       attackCd: staggeredAttackCd(def, i, heroDefs.length),
       abilityCd: 0,
       threat: 0,
+      buffs: [],
     }));
-    this.boss = { def: bossDef, hp: bossDef.maxHp, alive: true, attackCd: bossDef.attackIntervalMs };
+    this.boss = {
+      def: bossDef, hp: bossDef.maxHp, alive: true, attackCd: bossDef.attackIntervalMs, dots: [],
+    };
   }
 
   /**
@@ -60,6 +81,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.boss.hp = bossDef.maxHp;
     this.boss.alive = true;
     this.boss.attackCd = bossDef.attackIntervalMs;
+    this.boss.dots.length = 0;
 
     this.heroes.forEach((h, i) => {
       h.def = heroDefs.find(d => d.id === h.def.id) ?? h.def;
@@ -69,6 +91,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       h.attackCd = staggeredAttackCd(h.def, i, this.heroes.length);
       h.abilityCd = 0;
       h.threat = 0;
+      h.buffs.length = 0;
     });
 
     this.outcome = 'ongoing';
@@ -115,12 +138,16 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   tick(deltaMs: number): void {
     if (this.outcome !== 'ongoing' || !this.started) return;
 
+    this.tickDots(deltaMs);
+    if (this.outcome !== 'ongoing') return;
+
     for (const h of this.heroes) {
       if (!h.alive) continue;
+      this.tickBuffs(h, deltaMs);
       h.abilityCd = Math.max(0, h.abilityCd - deltaMs);
       h.attackCd -= deltaMs;
       if (h.attackCd <= 0) {
-        h.attackCd += h.def.attackIntervalMs;
+        h.attackCd += heroInterval(h);
         this.autoAct(h);
         if (this.outcome !== 'ongoing') return;
       }
@@ -139,17 +166,45 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.checkEnd();
   }
 
+  /** Expire finished buffs; the survivors keep shortening this hero's swings. */
+  private tickBuffs(h: HeroState, deltaMs: number): void {
+    if (h.buffs.length === 0) return;
+    for (const b of h.buffs) b.remainingMs -= deltaMs;
+    const live = h.buffs.filter(b => b.remainingMs > 0);
+    if (live.length !== h.buffs.length) h.buffs.splice(0, h.buffs.length, ...live);
+  }
+
+  /** Bleed every running dot into the boss, crediting its caster with the threat. */
+  private tickDots(deltaMs: number): void {
+    if (this.boss.dots.length === 0 || !this.boss.alive) return;
+    for (const dot of this.boss.dots) {
+      // Only the slice of this frame the dot was still alive for counts towards its next tick.
+      const alive = Math.min(deltaMs, Math.max(0, dot.remainingMs));
+      dot.remainingMs -= deltaMs;
+      dot.sinceTick += alive;
+      while (dot.sinceTick >= dot.tickMs && this.boss.alive) {
+        dot.sinceTick -= dot.tickMs;
+        // damageBoss already emits `boss_damaged`, so the tick shows up like any other hit.
+        this.damageBoss(dot.damage, this.hero(dot.sourceId));
+      }
+    }
+    const live = this.boss.dots.filter(d => d.remainingMs > 0);
+    if (live.length !== this.boss.dots.length) this.boss.dots.splice(0, this.boss.dots.length, ...live);
+    this.checkEnd();
+  }
+
   /** A hero's auto-attack: damage for tank/dps, heal the weakest ally for healers. */
   private autoAct(h: HeroState): void {
+    const power = heroAttack(h);
     if (h.def.role === 'heal') {
       const target = lowestHpAlly(this.heroes);
       if (!target || target.hp >= target.def.maxHp) return;
       this.emit('fight', { type: 'hero_attack', heroId: h.def.id, targetHeroId: target.def.id } as FightEvent);
-      this.healHero(target, h.def.attack, h);
+      this.healHero(target, power, h);
       return;
     }
     this.emit('fight', { type: 'hero_attack', heroId: h.def.id } as FightEvent);
-    this.damageBoss(h.def.attack, h);
+    this.damageBoss(power, h);
   }
 
   /** Returns false when the cast is rejected (dead, on cooldown, wrong target). */
@@ -175,13 +230,72 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     }
     this.emit('fight', { type: 'hero_cast', heroId, targetHeroId: target?.def.id } as FightEvent);
 
-    if (ability.taunt) this.applyTaunt(h);
-    if (ability.selfShield) h.shield += ability.selfShield;
-    if (ability.damage) this.damageBoss(ability.damage, h);
-    if (ability.heal && target) this.healHero(target, ability.heal, h);
+    this.resolveAbility(ability, h, target);
 
     this.checkEnd();
     return true;
+  }
+
+  /** Every ability primitive, applied in order. `target` is set for ally-targeted casts. */
+  private resolveAbility(a: Ability, h: HeroState, target?: HeroState): void {
+    if (a.taunt) this.applyTaunt(h);
+    if (a.selfShield) this.shieldHero(h, a.selfShield);
+    if (a.allyShield && target) this.shieldHero(target, a.allyShield);
+
+    const dealt = this.abilityDamage(a);
+    if (dealt) {
+      this.damageBoss(dealt, h);
+      if (a.lifestealPct) this.healHero(h, Math.round((dealt * a.lifestealPct) / 100));
+    }
+    if (a.dot) {
+      this.boss.dots.push({
+        damage: a.dot.damage, tickMs: a.dot.tickMs,
+        remainingMs: a.dot.durationMs, sinceTick: 0, sourceId: h.def.id,
+      });
+    }
+    if (a.bossStunMs) {
+      this.boss.attackCd += a.bossStunMs;
+      this.emit('fight', { type: 'boss_stunned', amount: a.bossStunMs } as FightEvent);
+    }
+
+    if (a.heal && target) this.healHero(target, a.heal, h);
+    if (a.selfHeal) this.healHero(h, a.selfHeal, h);
+    if (a.partyHeal) for (const ally of this.heroes) this.healHero(ally, a.partyHeal, h);
+    if (a.buff) this.applyBuff(a, h, target);
+
+    // Applied last so a fade isn't undone by the threat the cast itself generated.
+    if (a.threatFlat) h.threat = Math.max(0, h.threat + a.threatFlat);
+  }
+
+  /** Base damage plus the execute bonus when the boss is under its hp threshold. */
+  private abilityDamage(a: Ability): number {
+    const base = a.damage ?? 0;
+    if (!a.executeBonus || a.executeBelowPct === undefined) return base;
+    const hpPct = (this.boss.hp / this.boss.def.maxHp) * 100;
+    return hpPct <= a.executeBelowPct ? base + a.executeBonus : base;
+  }
+
+  private shieldHero(h: HeroState, amount: number): void {
+    if (!h.alive) return;
+    h.shield += amount;
+    this.emit('fight', { type: 'hero_shielded', heroId: h.def.id, amount } as FightEvent);
+  }
+
+  private applyBuff(a: Ability, caster: HeroState, target?: HeroState): void {
+    const buff = a.buff!;
+    const receivers =
+      buff.target === 'party' ? this.heroes
+      : buff.target === 'ally' ? [target ?? caster]
+      : [caster];
+    for (const h of receivers) {
+      if (!h.alive) continue;
+      h.buffs.push({
+        attackPct: buff.attackPct ?? 0,
+        attackSpeedPct: buff.attackSpeedPct ?? 0,
+        remainingMs: buff.durationMs,
+      });
+      this.emit('fight', { type: 'hero_buffed', heroId: h.def.id, amount: buff.durationMs } as FightEvent);
+    }
   }
 
   /** Wipes the party's threat and leaves the caster on top of the table. */

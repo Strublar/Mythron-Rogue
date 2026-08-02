@@ -1,5 +1,4 @@
 import { applyBoons } from '../data/boons';
-import { PARTY } from '../data/heroes';
 import type { BoonDef, HeroDef } from '../types';
 
 export interface BoonStack {
@@ -10,10 +9,15 @@ export interface BoonStack {
 /**
  * Persistent state of a single roguelike run: the boons picked between fights and
  * the roster they derive. Lives as long as the run — a new run means a new instance.
+ * `base` is the party chosen on the selection screen; boons never mutate it.
  */
 export class RunState {
   readonly boons: BoonDef[] = [];
-  private defs: HeroDef[] = PARTY;
+  private defs: HeroDef[];
+
+  constructor(private readonly base: HeroDef[]) {
+    this.defs = base;
+  }
 
   /** The party as buffed by every boon picked so far. */
   heroDefs(): HeroDef[] {
@@ -22,7 +26,7 @@ export class RunState {
 
   addBoon(boon: BoonDef): void {
     this.boons.push(boon);
-    this.defs = applyBoons(PARTY, this.boons);
+    this.defs = applyBoons(this.base, this.boons);
   }
 
   /** Owned boons collapsed to unique entries, in pick order, with their stack count. */
