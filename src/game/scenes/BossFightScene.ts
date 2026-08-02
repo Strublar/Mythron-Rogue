@@ -2,14 +2,15 @@ import Phaser from 'phaser';
 import { bossForLevel } from '../../data/bosses';
 import { FightEngine } from '../../engine/FightEngine';
 import { RunState } from '../../engine/RunState';
-import type { FightEvent } from '../../types';
+import type { FightEvent, HeroDef } from '../../types';
 import { CombatantView } from '../CombatantView';
 import { DragCastController } from '../DragCastController';
+import { HeroInspector } from '../HeroInspector';
 import { createButton } from '../ui';
 import type { InterludeData } from './InterludeScene';
 import {
   BOSS_ANCHOR, BOSS_BAR_Y, BOSS_GROUND_Y, BOSS_SCALE, GAME_HEIGHT, GAME_WIDTH,
-  HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, HERO_SLOTS, ROLE_COLOR,
+  HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, ROLE_COLOR, withSlots,
 } from '../layout';
 
 /** Pause between a boss dying and the between-fights screen opening. */
@@ -21,10 +22,13 @@ export class BossFightScene extends Phaser.Scene {
   private bossView!: CombatantView;
   private heroViews!: Map<string, CombatantView>;
   private dragCast!: DragCastController;
+  private inspector!: HeroInspector;
   private bossNameText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
   private startHint!: Phaser.GameObjects.Text;
   private ended = false;
+  /** True while the between-fights screen is up: the sim stops, the sprites keep idling. */
+  private frozen = false;
 
   constructor() {
     super({ key: 'BossFightScene' });
@@ -32,6 +36,7 @@ export class BossFightScene extends Phaser.Scene {
 
   create(): void {
     this.ended = false;
+    this.frozen = false;
     this.drawBackground();
 
     // A restart is a brand new run: boons do not carry over.
@@ -65,9 +70,8 @@ export class BossFightScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.heroViews = new Map();
-    const slotIndex = { tank: 0, dps: 0, heal: 0 };
-    for (const def of this.run.heroDefs()) {
-      const slot = HERO_SLOTS[def.role][slotIndex[def.role]++];
+    const placed = withSlots(this.run.heroDefs());
+    for (const { def, slot } of placed) {
       this.heroViews.set(def.id, new CombatantView(this, {
         unitKey: def.unitKey,
         x: slot.x,
@@ -84,8 +88,29 @@ export class BossFightScene extends Phaser.Scene {
 
     this.buildStartHint();
     this.dragCast = new DragCastController(this, this.engine, this.heroViews, this.bossView);
+    this.buildInspector(placed);
     this.engine.on('fight', (e: FightEvent) => this.onFightEvent(e));
     this.refreshViews();
+  }
+
+  /**
+   * Until the opening cast nobody is swinging, so a hold on a hero reads its stats card
+   * instead of arming a drag. The sprites are already interactive for drag-casting.
+   */
+  private buildInspector(placed: { def: HeroDef; slot: { x: number; y: number } }[]): void {
+    this.inspector = new HeroInspector(this);
+    // Opening the card kills the pending drag, so releasing over the boss never casts.
+    this.inspector.onOpen = () => this.dragCast.cancel();
+
+    for (const { def, slot } of placed) {
+      const view = this.heroViews.get(def.id);
+      if (!view) continue;
+      view.sprite.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+        // Read the live def: boons swap it in on every new boss.
+        const current = this.engine.hero(def.id)?.def ?? def;
+        this.inspector.press(current, slot.x, slot.y);
+      });
+    }
   }
 
   /** Nobody swings until the first ability lands — tell the player so. */
@@ -129,6 +154,9 @@ export class BossFightScene extends Phaser.Scene {
         break;
       case 'fight_start':
         this.startHint.setVisible(false);
+        // Once blades are out, hero pointer-down belongs to drag-cast alone.
+        this.inspector.enabled = false;
+        this.inspector.cancel();
         break;
       case 'hero_taunt':
         heroView?.popText('TAUNT!', '#ff5a4a');
@@ -168,17 +196,30 @@ export class BossFightScene extends Phaser.Scene {
     }
   }
 
-  /** Freezes the battlefield behind the between-fights screen until CONTINUE. */
+  /**
+   * Stops the sim behind the between-fights screen without pausing the scene — a paused
+   * scene freezes its UpdateList, and the party should keep idling under the boon window.
+   * Input goes off instead, so drag-casts cannot fire and pointers reach the interlude only.
+   */
   private openInterlude(): void {
     if (this.ended) return;
-    const data: InterludeData = { clearedLevel: this.engine.level, run: this.run };
-    this.events.once(Phaser.Scenes.Events.RESUME, () => this.advanceRun());
+    this.frozen = true;
+    this.input.enabled = false;
+    // Input goes dead here, so anything still in flight would never see its pointer-up.
+    this.dragCast.cancel();
+    this.inspector.cancel();
+    const data: InterludeData = {
+      clearedLevel: this.engine.level,
+      run: this.run,
+      onDone: () => this.resumeRun(),
+    };
     this.scene.launch('InterludeScene', data);
-    this.scene.pause();
   }
 
-  private advanceRun(): void {
+  private resumeRun(): void {
     if (this.ended) return;
+    this.frozen = false;
+    this.input.enabled = true;
     this.engine.startNextBoss(bossForLevel(this.engine.level + 1), this.run.heroDefs());
   }
 
@@ -190,6 +231,8 @@ export class BossFightScene extends Phaser.Scene {
     this.bossView.revive();
     for (const view of this.heroViews.values()) view.revive();
     this.startHint.setVisible(true);
+    // A fresh boss re-opens the idle window: stats are inspectable again.
+    this.inspector.enabled = true;
     this.refreshViews();
     this.announceLevel(level);
   }
@@ -213,7 +256,7 @@ export class BossFightScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (!this.ended) this.engine.tick(delta);
+    if (!this.ended && !this.frozen) this.engine.tick(delta);
     this.refreshViews();
     this.dragCast.refresh(delta, this.input.activePointer);
   }
