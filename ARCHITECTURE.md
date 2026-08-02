@@ -42,7 +42,7 @@
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
             ├── MainMenuScene.ts        # Title + FIGHT BOSS button
             ├── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
-            └── InterludeScene.ts       # Between-fights screen (briefing + CONTINUE + hero long-press probes)
+            └── InterludeScene.ts       # Between-fights result window in the boss zone (+ hero long-press probes)
 ```
 
 ## Data Flow
@@ -71,9 +71,10 @@ main.ts
   (`ROLE_THREAT_MULTIPLIER`); the boss always swings at the highest-threat living hero.
   A tank ability is a taunt: it wipes party threat and plants `TAUNT_THREAT` on the caster.
 - **Between fights.** A cleared boss pauses `BossFightScene` and launches `InterludeScene`;
-  resuming the fight scene spawns the next boss. A paused scene takes no input, so the
-  interlude owns its own invisible probe zones over `HERO_SLOTS` — holding one opens the
-  `HeroTooltip` stats card.
+  resuming the fight scene spawns the next boss. The interlude draws no full-screen overlay —
+  only a result window in the vacated boss zone — so the party rows stay visible. A paused
+  scene takes no input, so the interlude owns its own invisible probe zones over `HERO_SLOTS`
+  — holding one opens the `HeroTooltip` stats card.
 - **Abilities** are cast by dragging a hero onto a target: boss for tanks/dps, an ally
   for healers. Rejected drops cost no cooldown.
 - **Engine never touches sprites.** `FightEngine` emits `FightEvent`s; views react.

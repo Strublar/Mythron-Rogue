@@ -169,7 +169,7 @@ export class BossFightScene extends Phaser.Scene {
   private openInterlude(): void {
     if (this.ended) return;
     const clearedLevel = this.engine.level;
-    const data: InterludeData = { clearedLevel, nextBoss: bossForLevel(clearedLevel + 1) };
+    const data: InterludeData = { clearedLevel };
     this.events.once(Phaser.Scenes.Events.RESUME, () => this.advanceRun());
     this.scene.launch('InterludeScene', data);
     this.scene.pause();
