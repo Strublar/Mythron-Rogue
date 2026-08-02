@@ -9,10 +9,9 @@ import { createButton } from '../ui';
 import type { InterludeData } from './InterludeScene';
 import {
   BOSS_ANCHOR, BOSS_BAR_Y, BOSS_GROUND_Y, BOSS_SCALE, GAME_HEIGHT, GAME_WIDTH,
-  HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, HERO_SLOTS,
+  HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, HERO_SLOTS, ROLE_COLOR,
 } from '../layout';
 
-const ROLE_BAR_COLOR = { tank: 0x6fd08c, dps: 0xffb347, heal: 0x7fd4ff } as const;
 /** Pause between a boss dying and the between-fights screen opening. */
 const NEXT_BOSS_DELAY_MS = 1400;
 
@@ -74,7 +73,7 @@ export class BossFightScene extends Phaser.Scene {
         barWidth: 96,
         barY: slot.y + HERO_BAR_DY,
         groundY: slot.y + HERO_GROUND_DY,
-        barFill: ROLE_BAR_COLOR[def.role],
+        barFill: ROLE_COLOR[def.role],
         showAbilityBar: true,
         showThreat: true,
       }));

@@ -36,12 +36,13 @@
         ├── CombatantView.ts            # Sprite + health bar + cooldown bar + ready ring + threat bar/aggro mark
         ├── ui.ts                       # Shared btn_confirm button factory
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
+        ├── HeroTooltip.ts              # Long-press stats card: hero stats + ability text/values
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
         └── scenes/
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
             ├── MainMenuScene.ts        # Title + FIGHT BOSS button
             ├── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
-            └── InterludeScene.ts       # Between-fights screen (next-boss briefing + CONTINUE)
+            └── InterludeScene.ts       # Between-fights screen (briefing + CONTINUE + hero long-press probes)
 ```
 
 ## Data Flow
@@ -70,7 +71,9 @@ main.ts
   (`ROLE_THREAT_MULTIPLIER`); the boss always swings at the highest-threat living hero.
   A tank ability is a taunt: it wipes party threat and plants `TAUNT_THREAT` on the caster.
 - **Between fights.** A cleared boss pauses `BossFightScene` and launches `InterludeScene`;
-  resuming the fight scene spawns the next boss.
+  resuming the fight scene spawns the next boss. A paused scene takes no input, so the
+  interlude owns its own invisible probe zones over `HERO_SLOTS` — holding one opens the
+  `HeroTooltip` stats card.
 - **Abilities** are cast by dragging a hero onto a target: boss for tanks/dps, an ally
   for healers. Rejected drops cost no cooldown.
 - **Engine never touches sprites.** `FightEngine` emits `FightEvent`s; views react.
