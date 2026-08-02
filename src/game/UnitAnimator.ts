@@ -27,44 +27,27 @@ export interface UnitDef {
   availableAnims: UnitAnimKey[];
 }
 
-// Registry of unit definitions. Add new units here.
-export const UNIT_DEFS: Record<string, UnitDef> = {
-  f1_general: {
-    atlasKey: 'f1_general',
-    framePrefix: 'f1_general',
-    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing', 'cast', 'caststart', 'castloop', 'castend'],
-  },
-  f2_general: {
-    atlasKey: 'f2_general',
-    framePrefix: 'f2_general',
-    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing', 'cast', 'caststart', 'castloop', 'castend'],
-  },
-  f5_general: {
-    atlasKey: 'f5_general',
-    framePrefix: 'f5_general',
-    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing', 'cast', 'caststart', 'castloop', 'castend'],
-  },
-  f1_silverguardsquire: {
-    atlasKey: 'f1_silverguardsquire',
-    framePrefix: 'f1_silverguardsquire',
-    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing'],
-  },
-  f1_sunriser: {
-    atlasKey: 'f1_sunriser',
-    framePrefix: 'f1_sunriser',
-    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing'],
-  },
-  f1_silvermanevanguard: {
-    atlasKey: 'f1_silvermanevanguard',
-    framePrefix: 'f1_silvermanevanguard',
-    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing'],
-  },
-  f1_ironcliffeguardian: {
-    atlasKey: 'f1_ironcliffeguardian',
-    framePrefix: 'f1_ironcliffeguardian',
-    availableAnims: ['idle', 'run', 'attack', 'hit', 'death', 'breathing'],
-  },
-};
+// Every Duelyst atlas in public/resources/units ships the same six animations.
+const STANDARD_ANIMS: UnitAnimKey[] = ['idle', 'run', 'attack', 'hit', 'death', 'breathing'];
+
+function standardUnit(key: string): UnitDef {
+  return { atlasKey: key, framePrefix: key, availableAnims: STANDARD_ANIMS };
+}
+
+// Registry of unit definitions — the party roster plus the bosses. Add new units here.
+// BootScene preloads exactly these atlases, so keep it to what the fight actually uses.
+export const UNIT_DEFS: Record<string, UnitDef> = Object.fromEntries(
+  [
+    'f1_ironcliffeguardian',
+    'f1_silvermanevanguard',
+    'f1_sunforgelancer',
+    'neutral_arakiheadhunter',
+    'f3_pyromancer',
+    'neutral_healingmystic',
+    'f1_sunriser',
+    'boss_shadowlord',
+  ].map(key => [key, standardUnit(key)]),
+);
 
 function animGlobalKey(unitKey: string, anim: UnitAnimKey): string {
   return `${unitKey}_${anim}`;
@@ -96,6 +79,11 @@ export function registerUnitAnims(scene: Phaser.Scene, unitKey: string): void {
     const { frameRate, repeat } = ANIM_DEFAULTS[animKey];
     scene.anims.create({ key: globalKey, frames, frameRate, repeat });
   }
+}
+
+/** True when the unit has that animation registered (some atlases lack cast/hit). */
+export function hasUnitAnim(scene: Phaser.Scene, unitKey: string, anim: UnitAnimKey): boolean {
+  return scene.anims.exists(animGlobalKey(unitKey, anim));
 }
 
 /** Play a unit animation on a sprite. Resolves correct global key. */
