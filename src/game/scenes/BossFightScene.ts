@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { bossForLevel } from '../../data/bosses';
 import { FightEngine } from '../../engine/FightEngine';
 import { RunState } from '../../engine/RunState';
-import type { FightEvent } from '../../types';
+import type { FightEvent, HeroDef } from '../../types';
 import { CombatantView } from '../CombatantView';
 import { DragCastController } from '../DragCastController';
 import { createButton } from '../ui';
@@ -15,9 +15,15 @@ import {
 /** Pause between a boss dying and the between-fights screen opening. */
 const NEXT_BOSS_DELAY_MS = 1400;
 
+/** The party built on the selection screen — the only thing the fight needs to start. */
+export interface BossFightData {
+  party: HeroDef[];
+}
+
 export class BossFightScene extends Phaser.Scene {
   private engine!: FightEngine;
   private run!: RunState;
+  private party!: HeroDef[];
   private bossView!: CombatantView;
   private heroViews!: Map<string, CombatantView>;
   private dragCast!: DragCastController;
@@ -30,12 +36,16 @@ export class BossFightScene extends Phaser.Scene {
     super({ key: 'BossFightScene' });
   }
 
+  init(data: BossFightData): void {
+    this.party = data.party;
+  }
+
   create(): void {
     this.ended = false;
     this.drawBackground();
 
-    // A restart is a brand new run: boons do not carry over.
-    this.run = new RunState();
+    // Each entry into the scene is a brand new run: boons do not carry over.
+    this.run = new RunState(this.party);
     const firstBoss = bossForLevel(1);
     this.engine = new FightEngine(this.run.heroDefs(), firstBoss);
 
@@ -144,6 +154,15 @@ export class BossFightScene extends Phaser.Scene {
         break;
       case 'boss_damaged':
         this.bossView.popText(`-${e.amount}`, '#ffd76b');
+        break;
+      case 'boss_stunned':
+        this.bossView.popText('STAGGERED!', '#7fd4ff');
+        break;
+      case 'hero_shielded':
+        heroView?.popText(`+${e.amount}`, '#9fd8ff');
+        break;
+      case 'hero_buffed':
+        heroView?.popText('BUFFED!', '#ffe9a8');
         break;
       case 'hero_damaged':
         heroView?.play('hit');
@@ -257,6 +276,10 @@ export class BossFightScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(depth);
 
-    createButton(this, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 90, 'RETRY', () => this.scene.restart(), depth);
+    // A new run means a new party — back to the selection screen, not a blind restart.
+    createButton(
+      this, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 90, 'RETRY',
+      () => this.scene.start('CharacterSelectScene'), depth,
+    );
   }
 }

@@ -76,7 +76,7 @@ export class MainMenuScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       this.cameras.main.fadeOut(400, 0, 0, 0, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
         if (progress === 1) {
-          this.scene.start('BossFightScene');
+          this.scene.start('CharacterSelectScene');
         }
       });
     });
