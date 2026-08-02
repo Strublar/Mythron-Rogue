@@ -5,13 +5,15 @@ import { FightEngine } from '../../engine/FightEngine';
 import type { FightEvent } from '../../types';
 import { CombatantView } from '../CombatantView';
 import { DragCastController } from '../DragCastController';
+import { createButton } from '../ui';
+import type { InterludeData } from './InterludeScene';
 import {
   BOSS_ANCHOR, BOSS_BAR_Y, BOSS_GROUND_Y, BOSS_SCALE, GAME_HEIGHT, GAME_WIDTH,
   HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, HERO_SLOTS,
 } from '../layout';
 
 const ROLE_BAR_COLOR = { tank: 0x6fd08c, dps: 0xffb347, heal: 0x7fd4ff } as const;
-/** Pause between a boss dying and the next one of the run spawning. */
+/** Pause between a boss dying and the between-fights screen opening. */
 const NEXT_BOSS_DELAY_MS = 1400;
 
 export class BossFightScene extends Phaser.Scene {
@@ -21,6 +23,7 @@ export class BossFightScene extends Phaser.Scene {
   private dragCast!: DragCastController;
   private bossNameText!: Phaser.GameObjects.Text;
   private levelText!: Phaser.GameObjects.Text;
+  private startHint!: Phaser.GameObjects.Text;
   private ended = false;
 
   constructor() {
@@ -73,12 +76,33 @@ export class BossFightScene extends Phaser.Scene {
         groundY: slot.y + HERO_GROUND_DY,
         barFill: ROLE_BAR_COLOR[def.role],
         showAbilityBar: true,
+        showThreat: true,
       }));
     }
 
+    this.buildStartHint();
     this.dragCast = new DragCastController(this, this.engine, this.heroViews, this.bossView);
     this.engine.on('fight', (e: FightEvent) => this.onFightEvent(e));
     this.refreshViews();
+  }
+
+  /** Nobody swings until the first ability lands — tell the player so. */
+  private buildStartHint(): void {
+    this.startHint = this.add
+      .text(GAME_WIDTH / 2, 640, 'DRAG A HERO TO CAST AND BEGIN', {
+        fontFamily: 'Lato', fontSize: '24px', fontStyle: 'bold', color: '#ffd76b',
+        stroke: '#000000', strokeThickness: 4,
+      })
+      .setOrigin(0.5)
+      .setDepth(120);
+    this.tweens.add({
+      targets: this.startHint,
+      alpha: 0.35,
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
   }
 
   private drawBackground(): void {
@@ -100,6 +124,12 @@ export class BossFightScene extends Phaser.Scene {
     switch (e.type) {
       case 'boss_spawn':
         this.onBossSpawn();
+        break;
+      case 'fight_start':
+        this.startHint.setVisible(false);
+        break;
+      case 'hero_taunt':
+        heroView?.popText('TAUNT!', '#ff5a4a');
         break;
       case 'hero_attack':
       case 'hero_cast':
@@ -124,15 +154,26 @@ export class BossFightScene extends Phaser.Scene {
         heroView?.playDeath();
         break;
       case 'end':
+        this.dragCast.cancel();
         // A cleared boss only ends the *fight*; the run continues one level deeper.
         if (e.outcome === 'victory') {
           this.bossView.playDeath();
-          this.time.delayedCall(NEXT_BOSS_DELAY_MS, () => this.advanceRun());
+          this.time.delayedCall(NEXT_BOSS_DELAY_MS, () => this.openInterlude());
         } else {
           this.showRunOverOverlay(e.level ?? this.engine.level);
         }
         break;
     }
+  }
+
+  /** Freezes the battlefield behind the between-fights screen until CONTINUE. */
+  private openInterlude(): void {
+    if (this.ended) return;
+    const clearedLevel = this.engine.level;
+    const data: InterludeData = { clearedLevel, nextBoss: bossForLevel(clearedLevel + 1) };
+    this.events.once(Phaser.Scenes.Events.RESUME, () => this.advanceRun());
+    this.scene.launch('InterludeScene', data);
+    this.scene.pause();
   }
 
   private advanceRun(): void {
@@ -147,6 +188,7 @@ export class BossFightScene extends Phaser.Scene {
     this.levelText.setText(`LEVEL ${level}`);
     this.bossView.revive();
     for (const view of this.heroViews.values()) view.revive();
+    this.startHint.setVisible(true);
     this.refreshViews();
     this.announceLevel(level);
   }
@@ -177,6 +219,8 @@ export class BossFightScene extends Phaser.Scene {
 
   private refreshViews(): void {
     this.bossView.setValues(this.engine.boss.hp, this.engine.boss.def.maxHp);
+    const topThreatId = this.engine.topThreatHero()?.def.id;
+    const maxThreat = this.engine.maxThreat();
     for (const h of this.engine.heroes) {
       const view = this.heroViews.get(h.def.id);
       if (!view) continue;
@@ -185,6 +229,7 @@ export class BossFightScene extends Phaser.Scene {
         h.alive ? this.engine.abilityProgress(h.def.id) : 0,
         this.engine.isAbilityReady(h.def.id),
       );
+      if (h.alive) view.setThreat(maxThreat > 0 ? h.threat / maxThreat : 0, h.def.id === topThreatId);
     }
   }
 
@@ -211,13 +256,6 @@ export class BossFightScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(depth);
 
-    const btn = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 90, 'btn_confirm')
-      .setInteractive({ useHandCursor: true })
-      .setDepth(depth);
-    this.add
-      .text(btn.x, btn.y, 'RETRY', { fontFamily: 'Lato', fontSize: '26px', color: '#ffffff', fontStyle: 'bold' })
-      .setOrigin(0.5)
-      .setDepth(depth + 1);
-    btn.once(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.scene.restart());
+    createButton(this, GAME_WIDTH / 2, GAME_HEIGHT / 2 + 90, 'RETRY', () => this.scene.restart(), depth);
   }
 }

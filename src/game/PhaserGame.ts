@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { BootScene } from './scenes/BootScene';
 import { MainMenuScene } from './scenes/MainMenuScene';
 import { BossFightScene } from './scenes/BossFightScene';
+import { InterludeScene } from './scenes/InterludeScene';
 import { GAME_HEIGHT, GAME_WIDTH } from './layout';
 
 export function createPhaserGame(): Phaser.Game {
@@ -15,6 +16,6 @@ export function createPhaserGame(): Phaser.Game {
       mode: Phaser.Scale.FIT,
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-    scene: [BootScene, MainMenuScene, BossFightScene],
+    scene: [BootScene, MainMenuScene, BossFightScene, InterludeScene],
   });
 }

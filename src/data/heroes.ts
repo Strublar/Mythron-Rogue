@@ -1,4 +1,15 @@
-import type { Ability, HeroDef } from '../types';
+import type { Ability, HeroDef, HeroRole } from '../types';
+
+// Threat tuning: every point of damage dealt or hp healed converts to threat with
+// this role weight, so tanks out-aggro the rest of the party without out-damaging it.
+export const ROLE_THREAT_MULTIPLIER: Record<HeroRole, number> = {
+  tank: 5,
+  dps: 1,
+  heal: 1.5,
+};
+
+/** Threat a taunt plants on its caster after wiping the party's threat. */
+export const TAUNT_THREAT = 1500;
 
 // Three archetype abilities, shared across the roster — one per role.
 export const TANK_ABILITY: Ability = {
@@ -8,6 +19,7 @@ export const TANK_ABILITY: Ability = {
   cooldownMs: 8000,
   damage: 140,
   selfShield: 250,
+  taunt: true,
 };
 
 export const DPS_ABILITY: Ability = {

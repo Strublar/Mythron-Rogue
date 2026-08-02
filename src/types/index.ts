@@ -13,6 +13,7 @@ export interface Ability {
   damage?: number;      // applied to the boss
   heal?: number;        // applied to the target ally
   selfShield?: number;  // absorb granted to the caster
+  taunt?: boolean;      // wipes party threat and pins the boss on the caster
 }
 
 export interface HeroDef {
@@ -33,6 +34,7 @@ export interface HeroState {
   alive: boolean;
   attackCd: number;     // ms remaining
   abilityCd: number;    // ms remaining
+  threat: number;       // boss aggro score — highest wins the boss's next swing
 }
 
 export interface BossDef {
@@ -56,6 +58,8 @@ export type FightOutcome = 'ongoing' | 'victory' | 'defeat';
 
 export type FightEventType =
   | 'boss_spawn'
+  | 'fight_start'
+  | 'hero_taunt'
   | 'hero_attack'
   | 'hero_cast'
   | 'boss_attack'
