@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { SHADOWLORD } from '../../data/bosses';
+import { bossForLevel } from '../../data/bosses';
 import { PARTY } from '../../data/heroes';
 import { FightEngine } from '../../engine/FightEngine';
 import type { FightEvent } from '../../types';
@@ -11,12 +11,16 @@ import {
 } from '../layout';
 
 const ROLE_BAR_COLOR = { tank: 0x6fd08c, dps: 0xffb347, heal: 0x7fd4ff } as const;
+/** Pause between a boss dying and the next one of the run spawning. */
+const NEXT_BOSS_DELAY_MS = 1400;
 
 export class BossFightScene extends Phaser.Scene {
   private engine!: FightEngine;
   private bossView!: CombatantView;
   private heroViews!: Map<string, CombatantView>;
   private dragCast!: DragCastController;
+  private bossNameText!: Phaser.GameObjects.Text;
+  private levelText!: Phaser.GameObjects.Text;
   private ended = false;
 
   constructor() {
@@ -27,10 +31,11 @@ export class BossFightScene extends Phaser.Scene {
     this.ended = false;
     this.drawBackground();
 
-    this.engine = new FightEngine(PARTY, SHADOWLORD);
+    const firstBoss = bossForLevel(1);
+    this.engine = new FightEngine(PARTY, firstBoss);
 
     this.bossView = new CombatantView(this, {
-      unitKey: SHADOWLORD.unitKey,
+      unitKey: firstBoss.unitKey,
       x: BOSS_ANCHOR.x,
       y: BOSS_ANCHOR.y,
       scale: BOSS_SCALE,
@@ -41,9 +46,15 @@ export class BossFightScene extends Phaser.Scene {
       barFill: 0xd7443e,
       barText: true,
     });
-    this.add
-      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 34, SHADOWLORD.name.toUpperCase(), {
+    this.bossNameText = this.add
+      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 34, firstBoss.name.toUpperCase(), {
         fontFamily: 'Lato', fontSize: '28px', color: '#f3e6c8', fontStyle: 'bold',
+        stroke: '#000000', strokeThickness: 4,
+      })
+      .setOrigin(0.5);
+    this.levelText = this.add
+      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 66, 'LEVEL 1', {
+        fontFamily: 'Lato', fontSize: '20px', color: '#ffd76b', fontStyle: 'bold',
         stroke: '#000000', strokeThickness: 4,
       })
       .setOrigin(0.5);
@@ -87,6 +98,9 @@ export class BossFightScene extends Phaser.Scene {
     const heroView = e.heroId ? this.heroViews.get(e.heroId) : undefined;
 
     switch (e.type) {
+      case 'boss_spawn':
+        this.onBossSpawn();
+        break;
       case 'hero_attack':
       case 'hero_cast':
         heroView?.play(e.type === 'hero_cast' ? 'cast' : 'attack', 'attack');
@@ -110,10 +124,49 @@ export class BossFightScene extends Phaser.Scene {
         heroView?.playDeath();
         break;
       case 'end':
-        if (e.outcome === 'victory') this.bossView.playDeath();
-        this.showEndOverlay(e.outcome === 'victory');
+        // A cleared boss only ends the *fight*; the run continues one level deeper.
+        if (e.outcome === 'victory') {
+          this.bossView.playDeath();
+          this.time.delayedCall(NEXT_BOSS_DELAY_MS, () => this.advanceRun());
+        } else {
+          this.showRunOverOverlay(e.level ?? this.engine.level);
+        }
         break;
     }
+  }
+
+  private advanceRun(): void {
+    if (this.ended) return;
+    this.engine.startNextBoss(bossForLevel(this.engine.level + 1));
+  }
+
+  /** Resets every bar and sprite for the freshly spawned boss and the restored party. */
+  private onBossSpawn(): void {
+    const { level, boss } = this.engine;
+    this.bossNameText.setText(boss.def.name.toUpperCase());
+    this.levelText.setText(`LEVEL ${level}`);
+    this.bossView.revive();
+    for (const view of this.heroViews.values()) view.revive();
+    this.refreshViews();
+    this.announceLevel(level);
+  }
+
+  private announceLevel(level: number): void {
+    const banner = this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `LEVEL ${level}`, {
+        fontFamily: 'Lato', fontSize: '72px', fontStyle: 'bold', color: '#ffd76b',
+        stroke: '#000000', strokeThickness: 6,
+      })
+      .setOrigin(0.5)
+      .setDepth(150);
+    this.tweens.add({
+      targets: banner,
+      y: banner.y - 70,
+      alpha: 0,
+      duration: 1200,
+      ease: 'Quad.easeOut',
+      onComplete: () => banner.destroy(),
+    });
   }
 
   update(_time: number, delta: number): void {
@@ -135,19 +188,30 @@ export class BossFightScene extends Phaser.Scene {
     }
   }
 
-  private showEndOverlay(victory: boolean): void {
+  private showRunOverOverlay(highestLevel: number): void {
     this.ended = true;
     const depth = 200;
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setDepth(depth);
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 80, victory ? 'VICTORY' : 'DEFEAT', {
-        fontFamily: 'Lato', fontSize: '64px', fontStyle: 'bold',
-        color: victory ? '#ffd76b' : '#ff8a80',
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, 'RUN OVER', {
+        fontFamily: 'Lato', fontSize: '64px', fontStyle: 'bold', color: '#ff8a80',
+      })
+      .setOrigin(0.5)
+      .setDepth(depth);
+    this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, 'HIGHEST LEVEL', {
+        fontFamily: 'Lato', fontSize: '24px', color: '#f3e6c8',
+      })
+      .setOrigin(0.5)
+      .setDepth(depth);
+    this.add
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 10, `${highestLevel}`, {
+        fontFamily: 'Lato', fontSize: '72px', fontStyle: 'bold', color: '#ffd76b',
       })
       .setOrigin(0.5)
       .setDepth(depth);
 
-    const btn = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 40, 'btn_confirm')
+    const btn = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2 + 90, 'btn_confirm')
       .setInteractive({ useHandCursor: true })
       .setDepth(depth);
     this.add

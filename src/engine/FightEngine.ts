@@ -8,6 +8,11 @@ export function livingByRole(heroes: HeroState[], role: HeroRole): HeroState[] {
   return heroes.filter(h => h.alive && h.def.role === role);
 }
 
+/** Stagger initial cooldowns so the whole party doesn't swing on the same frame. */
+function staggeredAttackCd(def: HeroDef, index: number, partySize: number): number {
+  return (def.attackIntervalMs / partySize) * index;
+}
+
 export function lowestHpAlly(heroes: HeroState[]): HeroState | undefined {
   let best: HeroState | undefined;
   for (const h of heroes) {
@@ -25,19 +30,43 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   readonly heroes: HeroState[];
   readonly boss: BossState;
   outcome: FightOutcome = 'ongoing';
+  /** 1-based run level — how many bosses deep this run is. */
+  level = 1;
 
   constructor(heroDefs: HeroDef[], bossDef: BossDef) {
     super();
-    // Stagger initial cooldowns so the whole party doesn't swing on the same frame.
     this.heroes = heroDefs.map((def, i) => ({
       def,
       hp: def.maxHp,
       shield: 0,
       alive: true,
-      attackCd: (def.attackIntervalMs / heroDefs.length) * i,
+      attackCd: staggeredAttackCd(def, i, heroDefs.length),
       abilityCd: 0,
     }));
     this.boss = { def: bossDef, hp: bossDef.maxHp, alive: true, attackCd: bossDef.attackIntervalMs };
+  }
+
+  /**
+   * Next step of an endless run: swap in the scaled boss and restore the party
+   * (revived, full hp, no shield, cooldowns rewound).
+   */
+  startNextBoss(bossDef: BossDef): void {
+    this.level += 1;
+    this.boss.def = bossDef;
+    this.boss.hp = bossDef.maxHp;
+    this.boss.alive = true;
+    this.boss.attackCd = bossDef.attackIntervalMs;
+
+    this.heroes.forEach((h, i) => {
+      h.hp = h.def.maxHp;
+      h.shield = 0;
+      h.alive = true;
+      h.attackCd = staggeredAttackCd(h.def, i, this.heroes.length);
+      h.abilityCd = 0;
+    });
+
+    this.outcome = 'ongoing';
+    this.emit('fight', { type: 'boss_spawn', level: this.level } as FightEvent);
   }
 
   hero(id: string): HeroState | undefined {
@@ -161,6 +190,6 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     if (!this.boss.alive) this.outcome = 'victory';
     else if (this.heroes.every(h => !h.alive)) this.outcome = 'defeat';
     else return;
-    this.emit('fight', { type: 'end', outcome: this.outcome } as FightEvent);
+    this.emit('fight', { type: 'end', outcome: this.outcome, level: this.level } as FightEvent);
   }
 }
