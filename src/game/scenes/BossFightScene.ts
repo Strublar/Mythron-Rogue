@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { bossForLevel } from '../../data/bosses';
-import { PARTY } from '../../data/heroes';
 import { FightEngine } from '../../engine/FightEngine';
+import { RunState } from '../../engine/RunState';
 import type { FightEvent } from '../../types';
 import { CombatantView } from '../CombatantView';
 import { DragCastController } from '../DragCastController';
@@ -17,6 +17,7 @@ const NEXT_BOSS_DELAY_MS = 1400;
 
 export class BossFightScene extends Phaser.Scene {
   private engine!: FightEngine;
+  private run!: RunState;
   private bossView!: CombatantView;
   private heroViews!: Map<string, CombatantView>;
   private dragCast!: DragCastController;
@@ -33,8 +34,10 @@ export class BossFightScene extends Phaser.Scene {
     this.ended = false;
     this.drawBackground();
 
+    // A restart is a brand new run: boons do not carry over.
+    this.run = new RunState();
     const firstBoss = bossForLevel(1);
-    this.engine = new FightEngine(PARTY, firstBoss);
+    this.engine = new FightEngine(this.run.heroDefs(), firstBoss);
 
     this.bossView = new CombatantView(this, {
       unitKey: firstBoss.unitKey,
@@ -63,7 +66,7 @@ export class BossFightScene extends Phaser.Scene {
 
     this.heroViews = new Map();
     const slotIndex = { tank: 0, dps: 0, heal: 0 };
-    for (const def of PARTY) {
+    for (const def of this.run.heroDefs()) {
       const slot = HERO_SLOTS[def.role][slotIndex[def.role]++];
       this.heroViews.set(def.id, new CombatantView(this, {
         unitKey: def.unitKey,
@@ -168,8 +171,7 @@ export class BossFightScene extends Phaser.Scene {
   /** Freezes the battlefield behind the between-fights screen until CONTINUE. */
   private openInterlude(): void {
     if (this.ended) return;
-    const clearedLevel = this.engine.level;
-    const data: InterludeData = { clearedLevel };
+    const data: InterludeData = { clearedLevel: this.engine.level, run: this.run };
     this.events.once(Phaser.Scenes.Events.RESUME, () => this.advanceRun());
     this.scene.launch('InterludeScene', data);
     this.scene.pause();
@@ -177,7 +179,7 @@ export class BossFightScene extends Phaser.Scene {
 
   private advanceRun(): void {
     if (this.ended) return;
-    this.engine.startNextBoss(bossForLevel(this.engine.level + 1));
+    this.engine.startNextBoss(bossForLevel(this.engine.level + 1), this.run.heroDefs());
   }
 
   /** Resets every bar and sprite for the freshly spawned boss and the restored party. */

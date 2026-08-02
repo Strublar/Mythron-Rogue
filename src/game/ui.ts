@@ -24,5 +24,5 @@ export function createButton(
     glow.setAlpha(0);
     text.setColor('#ffffff');
   });
-  btn.once(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, onPress);
+  btn.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, onPress);
 }

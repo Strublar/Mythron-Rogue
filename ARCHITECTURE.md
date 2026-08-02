@@ -25,9 +25,11 @@
     │   └── index.ts                    # ALL shared types/interfaces (source of truth)
     ├── data/
     │   ├── heroes.ts                   # PARTY roster + the 3 archetype abilities + threat tuning
+    │   ├── boons.ts                    # Boon pool, roll, effect text, applyBoons(party, boons)
     │   └── bosses.ts                   # Boss definitions
     ├── engine/
-    │   └── FightEngine.ts              # Real-time fight sim: cooldowns, auto-acts, casts
+    │   ├── FightEngine.ts              # Real-time fight sim: cooldowns, auto-acts, casts
+    │   └── RunState.ts                 # Run-long boons + the roster they derive
     └── game/
         ├── PhaserGame.ts               # Phaser.Game config (720×1280 portrait, FIT)
         ├── layout.ts                   # Slot coordinates, scales, bar/ground offsets
@@ -37,12 +39,14 @@
         ├── ui.ts                       # Shared btn_confirm button factory
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
         ├── HeroTooltip.ts              # Long-press stats card: hero stats + ability text/values
+        ├── BoonCard.ts                 # Tappable boon offer card + shared boon palette
+        ├── BoonListPanel.ts            # "BOONS" overlay: every boon owned this run, stacked
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
         └── scenes/
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
             ├── MainMenuScene.ts        # Title + FIGHT BOSS button
             ├── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
-            └── InterludeScene.ts       # Between-fights result window in the boss zone (+ hero long-press probes)
+            └── InterludeScene.ts       # Between-fights boon draft in the boss zone (+ hero long-press probes)
 ```
 
 ## Data Flow
@@ -70,8 +74,13 @@ main.ts
 - **Threat.** Damage dealt and hp healed add threat, weighted per role
   (`ROLE_THREAT_MULTIPLIER`); the boss always swings at the highest-threat living hero.
   A tank ability is a taunt: it wipes party threat and plants `TAUNT_THREAT` on the caster.
-- **Between fights.** A cleared boss pauses `BossFightScene` and launches `InterludeScene`;
-  resuming the fight scene spawns the next boss. The interlude draws no full-screen overlay —
+- **Boons.** `RunState` holds every boon picked this run; `applyBoons` re-derives the whole
+  roster from `PARTY` (never mutating it) and `FightEngine.startNextBoss` swaps the new defs
+  in. Percentages are additive across stacks; speed/cooldown bonuses are haste (`ms / 1+pct`).
+- **Between fights.** A cleared boss pauses `BossFightScene` and launches `InterludeScene`,
+  which offers 3 boons — picking one banks it and resumes the fight scene, spawning the next
+  boss. A `BOONS` button under the back row lists the run's boons; it exists only in the
+  interlude. The interlude draws no full-screen overlay —
   only a result window in the vacated boss zone — so the party rows stay visible. A paused
   scene takes no input, so the interlude owns its own invisible probe zones over `HERO_SLOTS`
   — holding one opens the `HeroTooltip` stats card.
