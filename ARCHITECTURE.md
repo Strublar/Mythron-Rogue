@@ -4,7 +4,7 @@
 
 ```
 /
-├── index.html                          # HTML shell, Phaser canvas only (no DOM overlay)
+├── index.html                          # HTML shell + #rotate-gate portrait fallback overlay
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
@@ -31,6 +31,7 @@
     └── game/
         ├── PhaserGame.ts               # Phaser.Game config (720×1280 portrait, FIT)
         ├── layout.ts                   # Slot coordinates, scales, bar/ground offsets
+        ├── orientation.ts              # Portrait lock (Screen Orientation API + fullscreen)
         ├── UnitAnimator.ts             # UNIT_DEFS registry + atlas anim registration
         ├── CombatantView.ts            # Sprite + health bar + cooldown bar + ready ring
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)

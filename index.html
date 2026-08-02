@@ -32,10 +32,35 @@
         height: 100vh;
         touch-action: none; /* no pinch/scroll stealing drags from the canvas */
       }
+
+      /* Portrait fallback: where the orientation API can't lock (iOS, browser tab),
+         hide the game and ask for a rotate instead of playing letterboxed. */
+      #rotate-gate { display: none; }
+      @media (orientation: landscape) and (pointer: coarse) {
+        canvas { display: none !important; }
+        #rotate-gate {
+          display: flex;
+          position: fixed;
+          inset: 0;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          background: #05060f;
+          color: #e8e8f0;
+          font: 700 20px/1.4 'Lato', sans-serif;
+          text-align: center;
+        }
+        #rotate-gate .icon { font-size: 48px; }
+      }
     </style>
   </head>
   <body>
     <!-- Phaser canvas is injected here by PhaserGame.ts -->
+    <div id="rotate-gate">
+      <div class="icon">📱</div>
+      <div>Rotate your device to portrait</div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
