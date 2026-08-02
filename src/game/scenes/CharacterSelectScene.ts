@@ -3,12 +3,10 @@ import { DEFAULT_PARTY, heroesByRole } from '../../data/heroes';
 import type { HeroDef, HeroRole } from '../../types';
 import { createUnitSprite } from '../UnitAnimator';
 import { createHeroCard } from '../HeroCard';
-import { HeroTooltip } from '../HeroTooltip';
+import { HeroInspector } from '../HeroInspector';
 import { createButton } from '../ui';
 import { GAME_HEIGHT, GAME_WIDTH, HERO_BAR_DY, HERO_SCALE, HERO_SLOTS, ROLE_COLOR } from '../layout';
 
-/** Hold this long on a party slot before its stats card opens. */
-const LONG_PRESS_MS = 300;
 /** Finger-friendly tap zone around each slot. */
 const PROBE_W = 170;
 const PROBE_H = 170;
@@ -36,9 +34,9 @@ export class CharacterSelectScene extends Phaser.Scene {
   private party!: Record<HeroRole, HeroDef[]>;
   private slotObjects = new Map<string, Phaser.GameObjects.GameObject[]>();
   private gridObjects: Phaser.GameObjects.GameObject[] = [];
-  private tooltip!: HeroTooltip;
-  private pressTimer?: Phaser.Time.TimerEvent;
-  private slotHeld = false;
+  private inspector!: HeroInspector;
+  /** Set when a press turned into an inspect — that release must not also count as a tap. */
+  private inspected = false;
 
   constructor() {
     super({ key: 'CharacterSelectScene' });
@@ -57,13 +55,24 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.label(GAME_WIDTH / 2, 46, 'BUILD YOUR PARTY', 38, '#ffd76b', 'bold');
     this.label(GAME_WIDTH / 2, 88, 'Tap a hero to swap it · hold for stats', 18, '#9aa3b8');
 
-    this.tooltip = new HeroTooltip(this);
+    this.inspector = new HeroInspector(this);
+    this.inspector.onOpen = () => { this.inspected = true; };
     for (const role of ROLE_ORDER) this.party[role].forEach((_, i) => this.buildSlot(role, i));
 
     createButton(this, GAME_WIDTH / 2, START_BUTTON_Y, 'START RUN', () => this.startRun());
+  }
 
-    this.input.on(Phaser.Input.Events.POINTER_UP, () => this.endPress());
-    this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, () => this.endPress());
+  /** Arms the shared long-press. Pair with `wasTap` on the matching release. */
+  private beginPress(hero: HeroDef, x: number, y: number): void {
+    this.inspected = false;
+    this.inspector.press(hero, x, y);
+  }
+
+  /** True when the gesture that just ended was a tap rather than an inspect. */
+  private wasTap(): boolean {
+    const tap = !this.inspected;
+    this.inspector.cancel();
+    return tap;
   }
 
   private startRun(): void {
@@ -95,31 +104,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     const probe = this.add
       .zone(slot.x, slot.y, PROBE_W, PROBE_H)
       .setInteractive({ useHandCursor: true })
-      .on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.beginPress(hero, slot))
-      .on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => this.endPress())
+      .on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.beginPress(hero, slot.x, slot.y))
+      .on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => this.inspector.cancel())
+      // A long press inspects; a tap opens the roster for this slot.
       .on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
-        const held = this.slotHeld;
-        this.endPress();
-        // A long press inspects; a tap opens the roster for this slot.
-        if (!held) this.openGrid(role, index);
+        if (this.wasTap()) this.openGrid(role, index);
       });
 
     this.slotObjects.set(key, [sprite, name, probe]);
-  }
-
-  private beginPress(hero: HeroDef, slot: { x: number; y: number }): void {
-    this.endPress();
-    this.slotHeld = false;
-    this.pressTimer = this.time.delayedCall(LONG_PRESS_MS, () => {
-      this.slotHeld = true;
-      this.tooltip.show(hero, slot.x, slot.y);
-    });
-  }
-
-  private endPress(): void {
-    this.pressTimer?.remove();
-    this.pressTimer = undefined;
-    this.tooltip.hide();
   }
 
   // ── Roster grid ─────────────────────────────────────────────────────────────
@@ -158,9 +150,9 @@ export class CharacterSelectScene extends Phaser.Scene {
       createHeroCard(this, x, y, GRID.cardW, GRID.cardH, hero, {
         taken: fielded.has(hero.id) && hero.id !== current.id,
         current: hero.id === current.id,
-        onPick: picked => this.assign(role, index, picked),
-        onHold: (h, hx, hy) => this.tooltip.show(h, hx, hy),
-        onRelease: () => this.tooltip.hide(),
+        onPressStart: (h, hx, hy) => this.beginPress(h, hx, hy),
+        onPressCancel: () => this.inspector.cancel(),
+        onTap: picked => { if (this.wasTap()) this.assign(role, index, picked); },
       }, GRID_DEPTH + 1);
     });
 
@@ -168,7 +160,7 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   private closeGrid(): void {
-    this.tooltip.hide();
+    this.inspector.cancel();
     for (const o of this.gridObjects) o.destroy();
     this.gridObjects = [];
   }

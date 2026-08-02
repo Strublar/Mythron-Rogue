@@ -17,17 +17,17 @@ export interface HeroCardOpts {
   taken: boolean;
   /** Currently occupying the slot being edited. */
   current: boolean;
-  onPick: (hero: HeroDef) => void;
-  onHold: (hero: HeroDef, x: number, y: number) => void;
-  onRelease: () => void;
+  /** Pointer down: arm the scene's long-press inspect. */
+  onPressStart: (hero: HeroDef, x: number, y: number) => void;
+  /** The gesture left the card without releasing on it. */
+  onPressCancel: () => void;
+  /** Released on the card. The scene decides whether that was a tap or an inspect. */
+  onTap: (hero: HeroDef) => void;
 }
-
-/** Hold this long on a card before its stats card opens. Matches the slot probes. */
-export const CARD_LONG_PRESS_MS = 300;
 
 /**
  * Grid entry for one hero: static idle portrait, name, and a one-line stat strip.
- * Tapping picks it; holding opens the shared HeroTooltip via `onHold`.
+ * Press handling belongs to the scene's HeroInspector — the card only reports gestures.
  */
 export function createHeroCard(
   scene: Phaser.Scene,
@@ -79,33 +79,19 @@ export function createHeroCard(
       .setDepth(depth + 2);
   }
 
-  let held = false;
-  let timer: Phaser.Time.TimerEvent | undefined;
-  const release = (): void => {
-    timer?.remove();
-    timer = undefined;
-    opts.onRelease();
-  };
-
   bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OVER, () => {
     if (!opts.taken) bg.setFillStyle(HOVER, 0.95);
   });
   bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => {
     if (!opts.taken) bg.setFillStyle(IDLE, 0.95);
-    release();
+    opts.onPressCancel();
   });
-  bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-    held = false;
-    timer = scene.time.delayedCall(CARD_LONG_PRESS_MS, () => {
-      held = true;
-      opts.onHold(hero, x, y);
-    });
-  });
+  // Every card is inspectable, including the ones already fielded.
+  bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => opts.onPressStart(hero, x, y));
   bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => {
-    const wasHeld = held;
-    release();
-    // A long press is an inspect, not a pick — and a fielded hero cannot be picked twice.
-    if (!wasHeld && !opts.taken) opts.onPick(hero);
+    // A fielded hero cannot be picked twice, but its release still clears the press.
+    if (opts.taken) opts.onPressCancel();
+    else opts.onTap(hero);
   });
 }
 

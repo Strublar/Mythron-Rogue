@@ -1,45 +1,51 @@
 import Phaser from 'phaser';
-import { rollBoons } from '../../data/boons';
+import { boonAffects, rollBoons } from '../../data/boons';
 import type { RunState } from '../../engine/RunState';
-import { GAME_WIDTH, HERO_SLOTS } from '../layout';
-import { HeroTooltip } from '../HeroTooltip';
-import { createBoonCard } from '../BoonCard';
+import { GAME_WIDTH, HERO_GROUND_DY, withSlots } from '../layout';
+import { HeroInspector } from '../HeroInspector';
+import { createBoonCard, type BoonCardHandle } from '../BoonCard';
 import { BoonListPanel } from '../BoonListPanel';
-import { createButton } from '../ui';
-import type { BoonDef, HeroDef } from '../../types';
+import { createButton, type ButtonHandle } from '../ui';
+import type { BoonDef } from '../../types';
 
 export interface InterludeData {
   /** Level whose boss was just cleared. */
   clearedLevel: number;
   /** Run-long state: the picked boon lands here before the fight scene resumes. */
   run: RunState;
+  /** Handed back to the fight scene once a boon is locked in. */
+  onDone: () => void;
 }
 
-/** Hold this long on a hero before its stats card opens. */
-const LONG_PRESS_MS = 300;
-/** Finger-friendly probe around each slot. */
-const PROBE_W = 170;
-const PROBE_H = 170;
-const PROBE_DEPTH = 5;
 const BUTTON_DEPTH = 20;
+const RING_DEPTH = 15;
 
 /** Reward window, kept inside the vacated boss zone so the party rows stay clear. */
-const PANEL = { y: 395, w: 640, h: 530 };
+const PANEL = { y: 390, w: 640, h: 540 };
 const OFFER_COUNT = 3;
-const CARD = { w: 580, h: 108, gap: 12, top: 282 };
+const CARD = { w: 580, h: 96, gap: 10, top: 262 };
+/** Locks the highlighted boon in, parked under the offers. */
+const CONFIRM_Y = 612;
 /** Boon list opener, parked under the back row. */
 const BOONS_BUTTON_Y = 1246;
 
+/** Ring drawn under each hero the highlighted boon would buff. */
+const RING_W = 96;
+const RING_COLOR = 0xffd76b;
+
 /**
- * Between-fights screen. Launched over a paused BossFightScene: only the boss zone
- * is covered, so the party rows stay visible and inspectable. Picking one of three
- * boons banks it for the rest of the run and resumes the fight scene.
+ * Between-fights screen. Launched over a frozen BossFightScene: only the boss zone
+ * is covered, so the party rows stay visible, animating and inspectable. Tapping an
+ * offer highlights the heroes it buffs; CONFIRM banks it for the rest of the run.
  */
 export class InterludeScene extends Phaser.Scene {
-  private tooltip!: HeroTooltip;
   private boonList!: BoonListPanel;
-  private pressTimer?: Phaser.Time.TimerEvent;
   private run!: RunState;
+  private onDone!: () => void;
+  private cards: { boon: BoonDef; handle: BoonCardHandle }[] = [];
+  private rings: Phaser.GameObjects.Ellipse[] = [];
+  private confirm!: ButtonHandle;
+  private selected?: BoonDef;
   private chosen = false;
 
   constructor() {
@@ -48,65 +54,80 @@ export class InterludeScene extends Phaser.Scene {
 
   create(data: InterludeData): void {
     this.run = data.run;
+    this.onDone = data.onDone;
     this.chosen = false;
+    this.selected = undefined;
+    this.cards = [];
+    this.rings = [];
     const cx = GAME_WIDTH / 2;
 
     this.add
       .rectangle(cx, PANEL.y, PANEL.w, PANEL.h, 0x05060f, 0.88)
       .setStrokeStyle(2, 0xffd76b, 0.5);
 
-    this.label(cx, PANEL.y - 220, 'BOSS DEFEATED', 46, '#ffd76b', 'bold');
-    this.label(cx, PANEL.y - 182, `LEVEL ${data.clearedLevel} CLEARED`, 22, '#f3e6c8');
-    this.label(cx, PANEL.y - 143, 'CHOOSE A BOON', 24, '#9aa3b8', 'bold');
+    this.label(cx, 165, 'BOSS DEFEATED', 46, '#ffd76b', 'bold');
+    this.label(cx, 203, `LEVEL ${data.clearedLevel} CLEARED`, 22, '#f3e6c8');
+    this.label(cx, 240, 'CHOOSE A BOON', 24, '#9aa3b8', 'bold');
 
     rollBoons(OFFER_COUNT).forEach((boon, i) => {
       const y = CARD.top + (CARD.h + CARD.gap) * i + CARD.h / 2;
-      createBoonCard(this, cx, y, CARD.w, CARD.h, boon, b => this.pick(b), BUTTON_DEPTH);
+      const handle = createBoonCard(this, cx, y, CARD.w, CARD.h, boon, b => this.select(b), BUTTON_DEPTH);
+      this.cards.push({ boon, handle });
     });
+
+    this.confirm = createButton(this, cx, CONFIRM_Y, 'CONFIRM', () => this.pick(), BUTTON_DEPTH);
+    this.confirm.setEnabled(false);
 
     this.boonList = new BoonListPanel(this);
     createButton(this, cx, BOONS_BUTTON_Y, 'BOONS', () => this.boonList.show(this.run.stacks()), BUTTON_DEPTH);
 
-    this.buildInspector();
+    new HeroInspector(this).addProbes(this.run.heroDefs());
+  }
+
+  /** Tapping an offer only highlights it — nothing is banked until CONFIRM. */
+  private select(boon: BoonDef): void {
+    if (this.chosen) return;
+    this.selected = boon;
+    for (const card of this.cards) card.handle.setSelected(card.boon === boon);
+    this.highlight(boon);
+    this.confirm.setEnabled(true);
+  }
+
+  /** Rings every hero the offer's scope covers, so the buff's reach is visible. */
+  private highlight(boon: BoonDef): void {
+    for (const ring of this.rings) {
+      this.tweens.killTweensOf(ring);
+      ring.destroy();
+    }
+    this.rings = [];
+
+    for (const { def, slot } of withSlots(this.run.heroDefs())) {
+      if (!boonAffects(boon, def.role)) continue;
+      const ring = this.add
+        .ellipse(slot.x, slot.y + HERO_GROUND_DY, RING_W, RING_W * 0.38)
+        .setStrokeStyle(4, RING_COLOR, 1)
+        .setDepth(RING_DEPTH);
+      this.rings.push(ring);
+      this.tweens.add({
+        targets: ring,
+        scaleX: 1.18,
+        scaleY: 1.18,
+        alpha: 0.45,
+        duration: 620,
+        yoyo: true,
+        repeat: -1,
+        ease: 'Sine.easeInOut',
+      });
+    }
   }
 
   /** Banks the boon, then hands the fight scene back — the next boss spawns buffed. */
-  private pick(boon: BoonDef): void {
-    if (this.chosen) return;
+  private pick(): void {
+    if (this.chosen || !this.selected) return;
     this.chosen = true;
-    this.run.addBoon(boon);
-    this.scene.resume('BossFightScene');
+    this.run.addBoon(this.selected);
+    this.onDone();
     this.scene.stop();
-  }
-
-  /** One press probe per hero slot, feeding the shared stats card. */
-  private buildInspector(): void {
-    this.tooltip = new HeroTooltip(this);
-
-    const slotIndex = { tank: 0, dps: 0, heal: 0 };
-    for (const def of this.run.heroDefs()) {
-      const slot = HERO_SLOTS[def.role][slotIndex[def.role]++];
-      this.add
-        .zone(slot.x, slot.y, PROBE_W, PROBE_H)
-        .setDepth(PROBE_DEPTH)
-        .setInteractive()
-        .on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.beginPress(def, slot))
-        .on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => this.endPress());
-    }
-
-    this.input.on(Phaser.Input.Events.POINTER_UP, () => this.endPress());
-    this.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, () => this.endPress());
-  }
-
-  private beginPress(def: HeroDef, slot: { x: number; y: number }): void {
-    this.endPress();
-    this.pressTimer = this.time.delayedCall(LONG_PRESS_MS, () => this.tooltip.show(def, slot.x, slot.y));
-  }
-
-  private endPress(): void {
-    this.pressTimer?.remove();
-    this.pressTimer = undefined;
-    this.tooltip.hide();
   }
 
   private label(x: number, y: number, text: string, size: number, color: string, style = ''): void {

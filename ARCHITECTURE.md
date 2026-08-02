@@ -41,7 +41,8 @@
         ├── ui.ts                       # Shared btn_confirm button factory
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
         ├── HeroTooltip.ts              # Long-press stats card: hero stats + ability text/values
-        ├── BoonCard.ts                 # Tappable boon offer card + shared boon palette
+        ├── HeroInspector.ts            # Shared long-press-to-inspect: timer, drag guard, slot probes
+        ├── BoonCard.ts                 # Selectable boon offer card + shared boon palette
         ├── HeroCard.ts                 # Roster grid card: portrait, name, stat strip, tap/hold
         ├── BoonListPanel.ts            # "BOONS" overlay: every boon owned this run, stacked
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
@@ -72,7 +73,7 @@ main.ts
 - **Portrait, mobile only.** 720×1280 base, `Scale.FIT`. Boss in the top half, the
   party's three rows in the bottom half.
 - **Party:** 7 heroes — 2 tanks (front), 3 dps (mid), 2 heals (back). `HERO_SLOTS`
-  in `layout.ts` is the single source of slot positions.
+  in `layout.ts` is the single source of slot positions; `withSlots(defs)` hands them out.
 - **Party selection.** `ROSTER` holds 20 heroes (5 tanks / 9 dps / 6 heals), each with its
   own stats and its own `Ability`. `CharacterSelectScene` seeds from `DEFAULT_PARTY`, draws
   the picks at their real `HERO_SLOTS`, and opens a role grid in the boss zone on tap. It
@@ -89,7 +90,8 @@ main.ts
   tick time. Both use `grow`/`haste` from `src/data/statMath.ts`.
 - **Real-time, but the fight only starts on the first ability cast.** Until then every
   actor idles (`FightEngine.started`). Heroes then auto-attack (healers auto-heal the
-  lowest-HP ally).
+  lowest-HP ally). During that idle window a long press on a hero opens its stats card;
+  the first cast switches hero pointer-down back to drag-cast alone.
 - **Threat.** Damage dealt and hp healed add threat, weighted per role
   (`ROLE_THREAT_MULTIPLIER`); the boss always swings at the highest-threat living hero.
   A tank ability is a taunt: it wipes party threat and plants `TAUNT_THREAT` on the caster.
@@ -97,13 +99,15 @@ main.ts
   roster from the chosen party (never mutating it) and `FightEngine.startNextBoss` swaps the
   new defs in. Percentages are additive across stacks; speed/cooldown bonuses are haste
   (`ms / 1+pct`). `abilityPowerPct` scales every ability payload, dot damage included.
-- **Between fights.** A cleared boss pauses `BossFightScene` and launches `InterludeScene`,
-  which offers 3 boons — picking one banks it and resumes the fight scene, spawning the next
-  boss. A `BOONS` button under the back row lists the run's boons; it exists only in the
-  interlude. The interlude draws no full-screen overlay —
-  only a result window in the vacated boss zone — so the party rows stay visible. A paused
-  scene takes no input, so the interlude owns its own invisible probe zones over `HERO_SLOTS`
-  — holding one opens the `HeroTooltip` stats card.
+- **Between fights.** A cleared boss freezes `BossFightScene` (`frozen` stops the sim, input
+  goes off) and launches `InterludeScene`, which offers 3 boons. The scene is *not* paused —
+  a paused scene stops its UpdateList, and the party must keep idling under the boon window.
+  Tapping an offer only selects it: the affected heroes get pulsing rings (scope resolved by
+  `boonAffects`) and `CONFIRM` banks it, resuming the fight scene and spawning the next boss.
+  A `BOONS` button under the back row lists the run's boons; it exists only in the interlude.
+  The interlude draws no full-screen overlay — only a result window in the vacated boss zone —
+  so the party rows stay visible. The frozen scene takes no input, so the interlude owns its
+  own invisible probe zones over `HERO_SLOTS` (`HeroInspector.addProbes`).
 - **Casting.** Drag a hero onto the target its ability's `targetKind` names — the boss or an
   ally. Role never gates it. Rejected drops cost no cooldown.
 - **Engine never touches sprites.** `FightEngine` emits `FightEvent`s; views react.

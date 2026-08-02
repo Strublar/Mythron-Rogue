@@ -49,10 +49,15 @@ export function rollBoons(count: number): BoonDef[] {
   return offers;
 }
 
+/** Does this boon's scope cover `role`? Drives both the maths and the offer highlight. */
+export function boonAffects(b: BoonDef, role: HeroRole): boolean {
+  return b.scope === 'party' || b.scope === role;
+}
+
 /** Percent total of one effect across every owned boon that covers `role`. */
 function sumPct(boons: BoonDef[], role: HeroRole, key: keyof BoonEffect): number {
   return boons.reduce(
-    (total, b) => (b.scope === role || b.scope === 'party' ? total + (b.effect[key] ?? 0) : total),
+    (total, b) => (boonAffects(b, role) ? total + (b.effect[key] ?? 0) : total),
     0,
   );
 }
