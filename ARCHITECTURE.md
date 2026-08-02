@@ -24,7 +24,7 @@
     ├── types/
     │   └── index.ts                    # ALL shared types/interfaces (source of truth)
     ├── data/
-    │   ├── heroes.ts                   # PARTY roster + the 3 archetype abilities
+    │   ├── heroes.ts                   # PARTY roster + the 3 archetype abilities + threat tuning
     │   └── bosses.ts                   # Boss definitions
     ├── engine/
     │   └── FightEngine.ts              # Real-time fight sim: cooldowns, auto-acts, casts
@@ -33,13 +33,15 @@
         ├── layout.ts                   # Slot coordinates, scales, bar/ground offsets
         ├── orientation.ts              # Portrait lock (Screen Orientation API + fullscreen)
         ├── UnitAnimator.ts             # UNIT_DEFS registry + atlas anim registration
-        ├── CombatantView.ts            # Sprite + health bar + cooldown bar + ready ring
+        ├── CombatantView.ts            # Sprite + health bar + cooldown bar + ready ring + threat bar/aggro mark
+        ├── ui.ts                       # Shared btn_confirm button factory
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
         └── scenes/
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
             ├── MainMenuScene.ts        # Title + FIGHT BOSS button
-            └── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
+            ├── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
+            └── InterludeScene.ts       # Between-fights screen (next-boss briefing + CONTINUE)
 ```
 
 ## Data Flow
@@ -61,8 +63,14 @@ main.ts
   party's three rows in the bottom half.
 - **Party:** 7 heroes — 2 tanks (front), 3 dps (mid), 2 heals (back). `HERO_SLOTS`
   in `layout.ts` is the single source of slot positions.
-- **Real-time.** Heroes auto-attack (healers auto-heal the lowest-HP ally), the boss
-  auto-attacks a random living tank and only spills to other rows once both tanks die.
+- **Real-time, but the fight only starts on the first ability cast.** Until then every
+  actor idles (`FightEngine.started`). Heroes then auto-attack (healers auto-heal the
+  lowest-HP ally).
+- **Threat.** Damage dealt and hp healed add threat, weighted per role
+  (`ROLE_THREAT_MULTIPLIER`); the boss always swings at the highest-threat living hero.
+  A tank ability is a taunt: it wipes party threat and plants `TAUNT_THREAT` on the caster.
+- **Between fights.** A cleared boss pauses `BossFightScene` and launches `InterludeScene`;
+  resuming the fight scene spawns the next boss.
 - **Abilities** are cast by dragging a hero onto a target: boss for tanks/dps, an ally
   for healers. Rejected drops cost no cooldown.
 - **Engine never touches sprites.** `FightEngine` emits `FightEvent`s; views react.

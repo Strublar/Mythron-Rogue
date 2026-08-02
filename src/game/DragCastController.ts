@@ -36,7 +36,8 @@ export class DragCastController {
     this.dragging = this.engine.hero(heroId);
   }
 
-  private cancel(): void {
+  /** Drops the in-flight drag and its arrow — also used when the fight ends. */
+  cancel(): void {
     this.dragging = undefined;
     this.gfx.clear();
   }

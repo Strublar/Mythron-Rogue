@@ -1,12 +1,12 @@
 import Phaser from 'phaser';
+import { ROLE_THREAT_MULTIPLIER, TAUNT_THREAT } from '../data/heroes';
 import type { BossDef, BossState, FightEvent, FightOutcome, HeroDef, HeroRole, HeroState } from '../types';
 
 /** Sentinel target id meaning "the boss" for ability casts. */
 export const BOSS_TARGET = 'boss';
 
-export function livingByRole(heroes: HeroState[], role: HeroRole): HeroState[] {
-  return heroes.filter(h => h.alive && h.def.role === role);
-}
+/** Tie-break when several heroes sit on the same threat (notably 0 at fight start). */
+const ROLE_AGGRO_PRIORITY: Record<HeroRole, number> = { tank: 2, dps: 1, heal: 0 };
 
 /** Stagger initial cooldowns so the whole party doesn't swing on the same frame. */
 function staggeredAttackCd(def: HeroDef, index: number, partySize: number): number {
@@ -32,6 +32,8 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   outcome: FightOutcome = 'ongoing';
   /** 1-based run level — how many bosses deep this run is. */
   level = 1;
+  /** The party (and the boss) hold their idle until the first ability of the fight. */
+  started = false;
 
   constructor(heroDefs: HeroDef[], bossDef: BossDef) {
     super();
@@ -42,6 +44,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       alive: true,
       attackCd: staggeredAttackCd(def, i, heroDefs.length),
       abilityCd: 0,
+      threat: 0,
     }));
     this.boss = { def: bossDef, hp: bossDef.maxHp, alive: true, attackCd: bossDef.attackIntervalMs };
   }
@@ -63,9 +66,11 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       h.alive = true;
       h.attackCd = staggeredAttackCd(h.def, i, this.heroes.length);
       h.abilityCd = 0;
+      h.threat = 0;
     });
 
     this.outcome = 'ongoing';
+    this.started = false;
     this.emit('fight', { type: 'boss_spawn', level: this.level } as FightEvent);
   }
 
@@ -85,8 +90,28 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     return 1 - h.abilityCd / h.def.ability.cooldownMs;
   }
 
+  /** Highest-threat living hero — the boss's next victim, and the aggro marker's owner. */
+  topThreatHero(): HeroState | undefined {
+    let best: HeroState | undefined;
+    for (const h of this.heroes) {
+      if (!h.alive) continue;
+      if (!best || this.outAggros(h, best)) best = h;
+    }
+    return best;
+  }
+
+  private outAggros(h: HeroState, best: HeroState): boolean {
+    if (h.threat !== best.threat) return h.threat > best.threat;
+    return ROLE_AGGRO_PRIORITY[h.def.role] > ROLE_AGGRO_PRIORITY[best.def.role];
+  }
+
+  /** Highest threat in the party, alive or not — the scale for threat bars. */
+  maxThreat(): number {
+    return this.heroes.reduce((m, h) => Math.max(m, h.threat), 0);
+  }
+
   tick(deltaMs: number): void {
-    if (this.outcome !== 'ongoing') return;
+    if (this.outcome !== 'ongoing' || !this.started) return;
 
     for (const h of this.heroes) {
       if (!h.alive) continue;
@@ -118,11 +143,11 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       const target = lowestHpAlly(this.heroes);
       if (!target || target.hp >= target.def.maxHp) return;
       this.emit('fight', { type: 'hero_attack', heroId: h.def.id, targetHeroId: target.def.id } as FightEvent);
-      this.healHero(target, h.def.attack);
+      this.healHero(target, h.def.attack, h);
       return;
     }
     this.emit('fight', { type: 'hero_attack', heroId: h.def.id } as FightEvent);
-    this.damageBoss(h.def.attack);
+    this.damageBoss(h.def.attack, h);
   }
 
   /** Returns false when the cast is rejected (dead, on cooldown, wrong target). */
@@ -141,27 +166,43 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     }
 
     h.abilityCd = ability.cooldownMs;
+    // The party idles until someone opens with an ability — that cast starts the fight.
+    if (!this.started) {
+      this.started = true;
+      this.emit('fight', { type: 'fight_start' } as FightEvent);
+    }
     this.emit('fight', { type: 'hero_cast', heroId, targetHeroId: target?.def.id } as FightEvent);
 
+    if (ability.taunt) this.applyTaunt(h);
     if (ability.selfShield) h.shield += ability.selfShield;
-    if (ability.damage) this.damageBoss(ability.damage);
-    if (ability.heal && target) this.healHero(target, ability.heal);
+    if (ability.damage) this.damageBoss(ability.damage, h);
+    if (ability.heal && target) this.healHero(target, ability.heal, h);
 
     this.checkEnd();
     return true;
   }
 
-  /** Random living tank; falls back to any living hero once the front row is gone. */
-  private pickBossTarget(): HeroState | undefined {
-    const tanks = livingByRole(this.heroes, 'tank');
-    const pool = tanks.length > 0 ? tanks : this.heroes.filter(h => h.alive);
-    if (pool.length === 0) return undefined;
-    return pool[Math.floor(Math.random() * pool.length)];
+  /** Wipes the party's threat and leaves the caster on top of the table. */
+  private applyTaunt(h: HeroState): void {
+    for (const other of this.heroes) other.threat = 0;
+    h.threat = TAUNT_THREAT;
+    this.emit('fight', { type: 'hero_taunt', heroId: h.def.id } as FightEvent);
   }
 
-  private damageBoss(amount: number): void {
+  private addThreat(h: HeroState, amount: number): void {
+    if (!h.alive || amount <= 0) return;
+    h.threat += amount * ROLE_THREAT_MULTIPLIER[h.def.role];
+  }
+
+  /** The boss swings at whoever holds the most threat. */
+  private pickBossTarget(): HeroState | undefined {
+    return this.topThreatHero();
+  }
+
+  private damageBoss(amount: number, source?: HeroState): void {
     if (!this.boss.alive) return;
     this.boss.hp = Math.max(0, this.boss.hp - amount);
+    if (source) this.addThreat(source, amount);
     this.emit('fight', { type: 'boss_damaged', amount } as FightEvent);
     if (this.boss.hp === 0) this.boss.alive = false;
   }
@@ -178,10 +219,11 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     }
   }
 
-  private healHero(h: HeroState, amount: number): void {
+  private healHero(h: HeroState, amount: number, source?: HeroState): void {
     if (!h.alive) return;
     const applied = Math.min(amount, h.def.maxHp - h.hp);
     h.hp += applied;
+    if (source) this.addThreat(source, applied);
     this.emit('fight', { type: 'hero_healed', heroId: h.def.id, amount: applied } as FightEvent);
   }
 
