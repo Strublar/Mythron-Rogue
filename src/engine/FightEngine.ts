@@ -51,9 +51,10 @@ export class FightEngine extends Phaser.Events.EventEmitter {
 
   /**
    * Next step of an endless run: swap in the scaled boss and restore the party
-   * (revived, full hp, no shield, cooldowns rewound).
+   * (revived, full hp, no shield, cooldowns rewound). `heroDefs` carries the
+   * boons picked in the interlude — same heroes, re-derived stats.
    */
-  startNextBoss(bossDef: BossDef): void {
+  startNextBoss(bossDef: BossDef, heroDefs: HeroDef[]): void {
     this.level += 1;
     this.boss.def = bossDef;
     this.boss.hp = bossDef.maxHp;
@@ -61,6 +62,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.boss.attackCd = bossDef.attackIntervalMs;
 
     this.heroes.forEach((h, i) => {
+      h.def = heroDefs.find(d => d.id === h.def.id) ?? h.def;
       h.hp = h.def.maxHp;
       h.shield = 0;
       h.alive = true;

@@ -37,6 +37,26 @@ export interface HeroState {
   threat: number;       // boss aggro score — highest wins the boss's next swing
 }
 
+/** Who a boon buffs: one role, or every hero. */
+export type BoonScope = HeroRole | 'party';
+
+/** Every field is a percent bonus, additive across stacks of the same effect. */
+export interface BoonEffect {
+  maxHpPct?: number;
+  attackPct?: number;        // auto-attack damage — heal amount for healers
+  attackSpeedPct?: number;   // haste: shortens attackIntervalMs
+  abilityPowerPct?: number;  // ability damage / heal / shield
+  cooldownPct?: number;      // haste: shortens the ability cooldown
+}
+
+/** A permanent run upgrade, picked between fights. Stacks with itself. */
+export interface BoonDef {
+  id: string;
+  name: string;
+  scope: BoonScope;
+  effect: BoonEffect;
+}
+
 export interface BossDef {
   id: string;
   unitKey: string;
