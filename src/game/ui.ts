@@ -1,5 +1,10 @@
 import Phaser from 'phaser';
 
+export interface ButtonHandle {
+  /** Disabled buttons dim and stop taking presses — used for "pick a boon first". */
+  setEnabled(on: boolean): void;
+}
+
 /** Shared `btn_confirm` button: glow on hover, label centred, one press handler. */
 export function createButton(
   scene: Phaser.Scene,
@@ -8,7 +13,7 @@ export function createButton(
   label: string,
   onPress: () => void,
   depth = 0,
-): void {
+): ButtonHandle {
   const glow = scene.add.image(x, y, 'btn_confirm_glow').setAlpha(0).setDepth(depth);
   const btn = scene.add.image(x, y, 'btn_confirm').setInteractive({ useHandCursor: true }).setDepth(depth);
   const text = scene.add
@@ -25,4 +30,16 @@ export function createButton(
     text.setColor('#ffffff');
   });
   btn.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, onPress);
+
+  return {
+    setEnabled(on: boolean): void {
+      if (btn.input) btn.input.enabled = on;
+      btn.setAlpha(on ? 1 : 0.4);
+      text.setAlpha(on ? 1 : 0.4);
+      if (!on) {
+        glow.setAlpha(0);
+        text.setColor('#ffffff');
+      }
+    },
+  };
 }

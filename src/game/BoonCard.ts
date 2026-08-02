@@ -8,7 +8,11 @@ export const BOON_MUTED = '#9aa3b8';
 
 const PAD = 18;
 
-/** Tappable offer card: boon name plus its generated effect line. */
+export interface BoonCardHandle {
+  setSelected(on: boolean): void;
+}
+
+/** Tappable offer card: boon name plus its generated effect line. Tap selects, never commits. */
 export function createBoonCard(
   scene: Phaser.Scene,
   x: number,
@@ -16,12 +20,11 @@ export function createBoonCard(
   w: number,
   h: number,
   boon: BoonDef,
-  onPick: (boon: BoonDef) => void,
+  onSelect: (boon: BoonDef) => void,
   depth = 0,
-): void {
+): BoonCardHandle {
   const bg = scene.add
     .rectangle(x, y, w, h, 0x11142a, 0.95)
-    .setStrokeStyle(2, 0xffd76b, 0.5)
     .setDepth(depth)
     .setInteractive({ useHandCursor: true });
 
@@ -40,13 +43,25 @@ export function createBoonCard(
     .setOrigin(0, 0)
     .setDepth(depth + 1);
 
-  bg.on('pointerover', () => {
-    bg.setFillStyle(0x1c2140, 0.95);
-    name.setColor('#ffe9a8');
-  });
-  bg.on('pointerout', () => {
-    bg.setFillStyle(0x11142a, 0.95);
-    name.setColor(BOON_GOLD);
-  });
-  bg.once(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => onPick(boon));
+  let selected = false;
+  let hovered = false;
+
+  /** One place decides the look, so hovering never wipes the selected state. */
+  const paint = (): void => {
+    bg.setFillStyle(selected || hovered ? 0x1c2140 : 0x11142a, 0.95);
+    bg.setStrokeStyle(selected ? 3 : 2, 0xffd76b, selected ? 1 : 0.5);
+    name.setColor(selected || hovered ? '#ffe9a8' : BOON_GOLD);
+  };
+  paint();
+
+  bg.on('pointerover', () => { hovered = true; paint(); });
+  bg.on('pointerout', () => { hovered = false; paint(); });
+  bg.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => onSelect(boon));
+
+  return {
+    setSelected(on: boolean): void {
+      selected = on;
+      paint();
+    },
+  };
 }

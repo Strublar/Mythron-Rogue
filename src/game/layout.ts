@@ -40,3 +40,11 @@ export const HERO_SLOTS: Record<HeroRole, { x: number; y: number }[]> = {
     { x: 470, y: 1165 },
   ],
 };
+
+/** Pairs each def with its row slot, in roster order — the one place slots get handed out. */
+export function withSlots<T extends { role: HeroRole }>(
+  defs: T[],
+): { def: T; slot: { x: number; y: number } }[] {
+  const next = { tank: 0, dps: 0, heal: 0 };
+  return defs.map(def => ({ def, slot: HERO_SLOTS[def.role][next[def.role]++] }));
+}
