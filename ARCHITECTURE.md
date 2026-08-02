@@ -1,64 +1,71 @@
-# ARCHITECTURE.md — Mythron-Rogue
+# ARCHITECTURE.md — Mythron
 
 ## File Map
 
 ```
 /
-├── index.html                          # HTML shell, mounts #app (React) + Phaser canvas
+├── index.html                          # HTML shell, Phaser canvas only (no DOM overlay)
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
+├── public/
+│   ├── manifest.json                   # PWA manifest (portrait, fullscreen)
+│   ├── sw.js
+│   └── resources/
+│       ├── units/                      # {unit}.png + {unit}_atlas.json (+ original .plist)
+│       ├── maps/ scenes/ ui/ generals/ # static PNG/JPG backdrops and UI art
+│       └── fonts/                      # Lato
+├── scripts/
+│   ├── plist-to-atlas.mjs              # Cocos2d .plist → Phaser JSON atlas
+│   ├── batch-plist-to-atlas.mjs        # npm run plist-to-atlas
+│   └── extract-sprites.mjs             # npm run extract-sprites
 └── src/
-    ├── main.ts                         # Entry: boots Phaser + mounts React overlay
+    ├── main.ts                         # Entry: boots Phaser, preloads Lato, registers sw
     ├── types/
     │   └── index.ts                    # ALL shared types/interfaces (source of truth)
-    ├── game/
-    │   ├── PhaserGame.ts               # Phaser.Game instance + config
-    │   └── scenes/
-    │       ├── BootScene.ts            # Preloads all assets (sprites, audio)
-    │       ├── CombatScene.ts          # Main tactical grid combat scene
-    │       └── UIScene.ts              # In-game HUD overlay (Phaser scene, on top of CombatScene)
+    ├── data/
+    │   ├── heroes.ts                   # PARTY roster + the 3 archetype abilities
+    │   └── bosses.ts                   # Boss definitions
     ├── engine/
-    │   ├── GameState.ts                # Full game state (board + hand + mana + turn)
-    │   ├── BoardState.ts               # 9×5 grid: unit placement, movement validation
-    │   ├── CardResolver.ts             # Resolves card effects (damage, summon, buff, etc.)
-    │   └── ActionSystem.ts             # Action queue, legal action gen, turn lifecycle
-    ├── ai/
-    │   ├── GreedyScorer.ts             # Scores each legal action (no lookahead)
-    │   └── AIController.ts             # Picks highest-scored action, executes, repeats
-    ├── roguelike/
-    │   ├── RunState.ts                 # Current run: deck, relics, HP, floor, gold
-    │   ├── DraftSystem.ts              # Card draft: offer N cards, player picks one
-    │   ├── RelicSystem.ts              # Relic pool, pickup, passive effect application
-    │   └── ProgressionSystem.ts        # Encounter ladder: floor → combat → boss
-    ├── assets/
-    │   └── README.md                   # CC0 asset pipeline notes (open-duelyst source)
-    └── ui/
-        ├── App.tsx                     # React root, routes between meta-loop screens
-        ├── RunHUD.tsx                  # HP, gold, floor counter (shown during combat)
-        ├── DraftScreen.tsx             # Card pick UI (post-combat)
-        └── RelicScreen.tsx             # Relic pick UI (milestone rewards)
+    │   └── FightEngine.ts              # Real-time fight sim: cooldowns, auto-acts, casts
+    └── game/
+        ├── PhaserGame.ts               # Phaser.Game config (720×1280 portrait, FIT)
+        ├── layout.ts                   # Slot coordinates, scales, bar/ground offsets
+        ├── UnitAnimator.ts             # UNIT_DEFS registry + atlas anim registration
+        ├── CombatantView.ts            # Sprite + health bar + cooldown bar + ready ring
+        ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
+        ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
+        └── scenes/
+            ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
+            ├── MainMenuScene.ts        # Title + FIGHT BOSS button
+            └── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
 ```
 
 ## Data Flow
 
 ```
 main.ts
-  ├── PhaserGame (canvas)
-  │     BootScene → CombatScene + UIScene (parallel)
-  │     CombatScene owns: GameState, ActionSystem, CardResolver, BoardState
-  │     AIController polls ActionSystem each enemy turn
-  └── React App (HTML overlay, z-index above canvas)
-        RunHUD ←── RunState (read-only during combat)
-        DraftScreen ←── DraftSystem (post-combat)
-        RelicScreen ←── RelicSystem (milestone)
-        ProgressionSystem drives screen transitions
+  └── PhaserGame (canvas, 720×1280 portrait)
+        BootScene → MainMenuScene → BossFightScene
+        BossFightScene owns:
+          FightEngine        (pure state; emits 'fight' FightEvents)
+          CombatantView × 8  (1 boss + 7 heroes)
+          DragCastController (input → engine.castAbility)
+        update(dt) → engine.tick(dt) → events → view animations
 ```
 
 ## Key Constraints
 
-- Board: 9 cols × 5 rows, 0-indexed, [col, row]
-- Cards: plain TS data objects (no class factory, no switch/case)
-- AI: greedy only — generate all legal actions, score each, play best
-- VFX: Phaser particle system only
-- Meta UI: HTML/React only, never inside Phaser canvas
+- **Portrait, mobile only.** 720×1280 base, `Scale.FIT`. Boss in the top half, the
+  party's three rows in the bottom half.
+- **Party:** 7 heroes — 2 tanks (front), 3 dps (mid), 2 heals (back). `HERO_SLOTS`
+  in `layout.ts` is the single source of slot positions.
+- **Real-time.** Heroes auto-attack (healers auto-heal the lowest-HP ally), the boss
+  auto-attacks a random living tank and only spills to other rows once both tanks die.
+- **Abilities** are cast by dragging a hero onto a target: boss for tanks/dps, an ally
+  for healers. Rejected drops cost no cooldown.
+- **Engine never touches sprites.** `FightEngine` emits `FightEvent`s; views react.
+- **Atlas frames are untrimmed square canvases** of varying size that share one art
+  scale — use the flat `HERO_SCALE` / `BOSS_SCALE`, never per-unit height normalisation.
+- Adding a unit means adding its key to `UNIT_DEFS`; `BootScene` preloads from that map.
+- VFX: Phaser tweens/graphics only.

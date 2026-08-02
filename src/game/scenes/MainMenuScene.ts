@@ -9,25 +9,19 @@ export class MainMenuScene extends Phaser.Scene {
   create(): void {
     const { width, height } = this.scale;
 
-    // Background layers
-    this.add.image(width / 2, height / 2, 'menu_bg').setDisplaySize(width, height);
-    this.add.image(width / 2, height / 2, 'menu_midground').setDisplaySize(width, height);
+    // Background layers, cover-scaled so portrait doesn't stretch the landscape art.
+    this.cover('menu_bg');
+    this.cover('menu_midground');
 
-    // Animated general (left side)
-    const sprite = createUnitSprite(this, 'f5_general', width * 0.28, height * 0.58);
-    sprite.setScale(3.5);
-    playUnitAnim(sprite, 'f5_general', 'breathing', true);
+    // Animated boss looming over the menu
+    const sprite = createUnitSprite(this, 'boss_shadowlord', width / 2, height * 0.52);
+    sprite.setScale((height * 0.3) / sprite.height).setFlipX(true);
+    playUnitAnim(sprite, 'boss_shadowlord', 'breathing', true);
 
-    // General portrait (right side)
-    const portrait = this.add.image(width * 0.78, height * 0.48, 'menu_portrait');
-    portrait.setScale(0.85);
-    portrait.setAlpha(0.92);
-
-    // Vignette overlay
-    this.add.image(width / 2, height / 2, 'menu_vignette').setDisplaySize(width, height).setAlpha(0.55);
+    this.cover('menu_vignette').setAlpha(0.55);
 
     // Title
-    this.add.text(width / 2, height * 0.18, 'MYTHRON ROGUE', {
+    this.add.text(width / 2, height * 0.14, 'MYTHRON', {
       fontSize: '52px',
       fontFamily: 'Georgia, serif',
       color: '#f0d080',
@@ -36,7 +30,7 @@ export class MainMenuScene extends Phaser.Scene {
       shadow: { offsetX: 2, offsetY: 4, color: '#000000', blur: 8, fill: true },
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height * 0.29, 'Slay. Draft. Survive.', {
+    this.add.text(width / 2, height * 0.21, 'Seven heroes. One boss.', {
       fontSize: '20px',
       fontFamily: 'Georgia, serif',
       color: '#c0a060',
@@ -44,14 +38,22 @@ export class MainMenuScene extends Phaser.Scene {
       strokeThickness: 3,
     }).setOrigin(0.5);
 
-    this.buildStartButton(width / 2, height * 0.72);
+    this.buildStartButton(width / 2, height * 0.85);
+  }
+
+  /** Scale an image to cover the portrait canvas without distorting it. */
+  private cover(key: string): Phaser.GameObjects.Image {
+    const { width, height } = this.scale;
+    const img = this.add.image(width / 2, height / 2, key);
+    img.setScale(Math.max(width / img.width, height / img.height));
+    return img;
   }
 
   private buildStartButton(x: number, y: number): void {
     const btn = this.add.image(x, y, 'btn_confirm').setInteractive({ useHandCursor: true });
     const btnGlow = this.add.image(x, y, 'btn_confirm_glow').setAlpha(0);
 
-    const label = this.add.text(x, y, 'START COMBAT', {
+    const label = this.add.text(x, y, 'FIGHT BOSS', {
       fontSize: '20px',
       fontFamily: 'Georgia, serif',
       color: '#ffffff',
@@ -74,8 +76,7 @@ export class MainMenuScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       this.cameras.main.fadeOut(400, 0, 0, 0, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
         if (progress === 1) {
-          this.scene.start('CombatScene');
-          this.scene.start('UIScene');
+          this.scene.start('BossFightScene');
         }
       });
     });

@@ -25,21 +25,17 @@
         src: url('/resources/fonts/Lato-Bold.ttf') format('truetype');
       }
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
-      /* TODO: add loading screen styles */
-      #app {
-        position: absolute;
-        inset: 0;
-        z-index: 10; /* React overlay sits above Phaser canvas */
-        pointer-events: none; /* pass clicks through to canvas by default */
+      body {
+        background: #000;
+        overflow: hidden;
+        width: 100vw;
+        height: 100vh;
+        touch-action: none; /* no pinch/scroll stealing drags from the canvas */
       }
-      #app > * { pointer-events: auto; } /* re-enable for actual UI elements */
     </style>
   </head>
   <body>
     <!-- Phaser canvas is injected here by PhaserGame.ts -->
-    <!-- React meta-loop overlay -->
-    <div id="app"></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

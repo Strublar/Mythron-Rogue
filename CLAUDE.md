@@ -2,8 +2,10 @@
 
 ## 🎮 Project
 
-Roguelike game built on top of Duelyst's CC0 assets (units, UI, artwork).
-Gameplay loop: Slay the Spire-style meta (runs, card draft, relics, boss progression) over Duelyst's tactical grid combat.
+Mobile boss-fight game built on top of Duelyst's CC0 assets (units, UI, artwork).
+Gameplay loop: a party of 7 heroes (2 tanks / 3 dps / 2 heals) fights a boss in real time.
+Heroes auto-attack; the player drags a hero onto the boss (or onto an ally, for healers)
+to cast its ability.
 Solo offline only — no multiplayer, no server infra.
 
 **Assets source:** `open-duelyst/duelyst` (CC0 — fully free, commercial use allowed, no attribution required)
@@ -18,7 +20,7 @@ Solo offline only — no multiplayer, no server infra.
 | Language | TypeScript |
 | Bundler | Vite |
 | CI/CD | GitHub Actions → Vercel (preview URL per PR) |
-| Mobile | Browser-first (landscape), Capacitor for store packaging later |
+| Mobile | Browser-first (portrait), Capacitor for store packaging later |
 
 ---
 
@@ -29,12 +31,11 @@ See `ARCHITECTURE.md` for all file paths. No blind exploration.
 Key directories:
 ```
 src/
-  game/         # Phaser scenes, game loop
-  engine/       # Card resolution, board state, action system
-  ai/           # Greedy AI scorer
-  roguelike/    # Meta-loop: runs, draft, relics, progression
+  game/         # Phaser scenes, views, input controllers, layout
+  engine/       # FightEngine: real-time sim (cooldowns, auto-acts, casts)
+  data/         # Hero roster, abilities, boss definitions
+  types/        # All shared types
   assets/       # Sprites, spritesheets (from open-duelyst CC0)
-  ui/           # React/HTML overlay (meta-loop UI, outside Phaser canvas)
 ```
 
 ---
@@ -92,25 +93,33 @@ Rules (mandatory):
 
 **Modularity:** If a component/module exceeds 150-200 lines, propose extraction.
 
-**Strict DRY:** Extract shared logic (e.g. shared board utilities, card resolvers).
+**Strict DRY:** Extract shared logic (e.g. `HealthBar` and `CombatantView` serve both heroes and bosses).
 
-**Mobile-first:** Touch input via Phaser pointer API (unified mouse/touch). Grid tap targets must be finger-friendly. Test on mobile browser at every PR via Vercel preview URL.
+**Mobile-first:** Touch input via Phaser pointer API (unified mouse/touch). Drag targets must be finger-friendly. Test on mobile browser at every PR via Vercel preview URL.
 
 ---
 
 ## 🎯 Game Design Constraints
 
-**AI:** Greedy scorer only. Generate all legal actions → score each → play best. No lookahead.
-AI personality via score weight tuning (aggressive boss = high `general_damage` weight, etc.).
+**Layout:** Portrait 720×1280, `Scale.FIT`. Boss top half, party bottom half in 3 rows
+(2 tanks / 3 dps / 2 heals). All slot coordinates live in `src/game/layout.ts`.
 
-**VFX:** Phaser particle system only (no Cocos2d `.plist` assets). Simple effects first, polish last.
+**Timing:** Real-time. Every actor runs on its own cooldown; `FightEngine.tick(dt)` is
+driven from the scene's `update`. No turns.
 
-**Cards:** Defined as JSON/TypeScript data objects. No switch/case factory pattern.
+**Engine purity:** `FightEngine` holds state and emits `FightEvent`s. It never touches
+sprites, tweens, or scenes — views subscribe and animate.
 
-**Board:** 9×5 grid, landscape orientation. Zoom/pan on mobile if needed.
+**Boss AI:** Auto-attack only. Targets a random living tank, spilling to the back rows
+only once both tanks are dead.
 
-**Meta-loop:** Run selection → combat → card draft → relic → next combat → boss.
-All meta-loop UI lives outside the Phaser canvas (HTML overlay).
+**Input:** Drag a hero onto a target to cast. Tanks/dps target the boss, healers target
+an ally. An invalid drop is a no-op and costs no cooldown.
+
+**Heroes/abilities/bosses:** Plain TS data objects in `src/data/`. No switch/case factory.
+
+**VFX:** Phaser tweens/graphics/particles only (no Cocos2d `.plist` assets). Simple
+effects first, polish last.
 
 ---
 
