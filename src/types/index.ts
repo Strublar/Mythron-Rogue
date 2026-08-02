@@ -51,9 +51,11 @@ export interface BossState {
   attackCd: number;
 }
 
+/** 'victory' = the current boss is down; the run itself only ends on 'defeat'. */
 export type FightOutcome = 'ongoing' | 'victory' | 'defeat';
 
 export type FightEventType =
+  | 'boss_spawn'
   | 'hero_attack'
   | 'hero_cast'
   | 'boss_attack'
@@ -69,4 +71,5 @@ export interface FightEvent {
   targetHeroId?: string; // ally targeted by a heal
   amount?: number;
   outcome?: FightOutcome;
+  level?: number;        // run level (boss_spawn / end)
 }

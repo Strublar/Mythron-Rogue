@@ -127,6 +127,17 @@ export class CombatantView {
     this.scene.tweens.add({ targets: this.sprite, alpha: 0.35, duration: 600, delay: 300 });
   }
 
+  /** Undoes playDeath — used when the next boss of the run spawns. */
+  revive(): void {
+    this.scene.tweens.killTweensOf(this.sprite);
+    this.sprite.setAlpha(1).clearTint().setPosition(this.opts.x, this.opts.y);
+    this.play('idle');
+    this.ready = false;
+    if (this.opts.showAbilityBar) this.sprite.setTint(0x8c8c9c);
+    this.readyRing?.setVisible(false);
+    this.drawCooldown(0);
+  }
+
   /** Floating number above the combatant; jittered so bursts don't stack illegibly. */
   popText(text: string, color: string): void {
     const label = this.scene.add
