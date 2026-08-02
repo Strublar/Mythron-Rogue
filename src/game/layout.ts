@@ -9,6 +9,13 @@ export const GAME_HEIGHT = 1280;
 export const HERO_SCALE = 2.0;
 export const BOSS_SCALE = 3.4;
 
+/** Per-role accent — hero health bars and the stats tooltip share it. */
+export const ROLE_COLOR: Record<HeroRole, number> = {
+  tank: 0x6fd08c,
+  dps: 0xffb347,
+  heal: 0x7fd4ff,
+};
+
 export const BOSS_ANCHOR = { x: GAME_WIDTH / 2, y: 400 };
 export const BOSS_BAR_Y = 96;
 export const BOSS_GROUND_Y = BOSS_ANCHOR.y + 130;
