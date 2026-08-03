@@ -21,12 +21,16 @@ export interface AbilityDot {
   durationMs: number;
 }
 
-/** Temporary stat swing granted by a cast. Percentages, like boons. */
-export interface AbilityBuff {
-  target: 'self' | 'ally' | 'party';
+/** A timed stat swing. Percentages, like boons. Granted by casts and by boon triggers. */
+export interface TimedBuff {
   durationMs: number;
   attackPct?: number;
   attackSpeedPct?: number;
+}
+
+/** Temporary stat swing granted by a cast. */
+export interface AbilityBuff extends TimedBuff {
+  target: 'self' | 'ally' | 'party';
 }
 
 export interface Ability {
@@ -101,14 +105,68 @@ export interface BoonEffect {
   cooldownPct?: number;      // haste: shortens the ability cooldown
 }
 
-/** A permanent run upgrade, picked between fights. Stacks with itself. */
+/**
+ * What wakes a trigger boon up. All but `interval` ride a `FightEvent`;
+ * the `*_hp_below` pair listens on damage and checks a threshold.
+ */
+export type BoonTrigger =
+  | 'fight_start' | 'interval' | 'hero_cast' | 'hero_attack' | 'hero_taunt'
+  | 'boss_damaged' | 'hero_damaged' | 'hero_healed' | 'hero_shielded'
+  | 'hero_death' | 'overheal' | 'shield_broken'
+  | 'boss_hp_below' | 'hero_hp_below';
+
+/**
+ * Who a trigger's payload lands on. `actor` is the hero the event happened *to*,
+ * `source` the hero that caused it, `scope` every living hero the boon covers.
+ */
+export type BoonTargetKind = 'actor' | 'source' | 'others' | 'lowest' | 'party' | 'scope';
+
+/** Gates a trigger. Every field is optional — an absent field never blocks. */
+export interface BoonCondition {
+  pct?: number;              // hp% threshold for boss_hp_below / hero_hp_below
+  everyNth?: number;         // fires one time in N
+  intervalMs?: number;       // period of an `interval` trigger
+  internalCdMs?: number;     // own cooldown, ms
+  oncePerFight?: boolean;
+  fromDot?: boolean;         // boss_damaged: dot ticks only
+  /** Whose role/tags the scope is checked against. Default 'source'. */
+  gate?: 'source' | 'actor';
+}
+
+/** What a trigger does once it passes. Resolved through the engine's own primitives. */
+export interface BoonAction {
+  target?: BoonTargetKind;      // default 'actor'
+  bossDamage?: number;
+  bossDamagePctOfAmount?: number; // % of the triggering amount, dealt to the boss
+  heal?: number;
+  healPctOfAmount?: number;
+  shield?: number;
+  buff?: TimedBuff;
+  dot?: AbilityDot;
+  refundCdMs?: number;          // ability cooldown handed back
+  bossStunMs?: number;
+  taunt?: boolean;
+  repeatCast?: boolean;         // resolve the caster's ability a second time, free
+}
+
+export interface BoonTriggerSpec {
+  on: BoonTrigger;
+  when?: BoonCondition;
+  do: BoonAction;
+}
+
+/**
+ * A permanent run upgrade, picked between fights. Stacks with itself: stat boons add
+ * their percentages, trigger boons simply fire once per copy owned.
+ */
 export interface BoonDef {
   id: string;
   name: string;
   scope: BoonScope;
-  effect: BoonEffect;
+  effect?: BoonEffect;
   /** Percentages multiply by how many heroes in the party the scope covers. */
   perMember?: boolean;
+  trigger?: BoonTriggerSpec;
 }
 
 export interface BossDef {
@@ -145,12 +203,16 @@ export type FightEventType =
   | 'hero_shielded'
   | 'hero_buffed'
   | 'hero_death'
+  | 'overheal'
+  | 'shield_broken'
   | 'end';
 
 export interface FightEvent {
   type: FightEventType;
   heroId?: string;       // actor (hero_attack / hero_cast) or victim (hero_damaged / …)
   targetHeroId?: string; // ally targeted by a heal
+  sourceHeroId?: string; // hero that caused it — the healer, shielder or damage dealer
+  fromDot?: boolean;     // boss_damaged: this hit is a dot tick
   amount?: number;
   outcome?: FightOutcome;
   level?: number;        // run level (boss_spawn / end)

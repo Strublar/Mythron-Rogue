@@ -1,12 +1,46 @@
 import Phaser from 'phaser';
+import { boonAffects } from '../data/boons';
 import { ROLE_THREAT_MULTIPLIER, TAUNT_THREAT } from '../data/heroes';
 import { haste } from '../data/statMath';
 import type {
-  Ability, BossDef, BossState, FightEvent, FightOutcome, HeroDef, HeroRole, HeroState,
+  Ability, BoonAction, BoonDef, BoonTargetKind, BoonTrigger, BossDef, BossState, FightEvent, FightEventType,
+  FightOutcome, HeroDef, HeroRole, HeroState, TimedBuff,
 } from '../types';
 
 /** Sentinel target id meaning "the boss" for ability casts. */
 export const BOSS_TARGET = 'boss';
+
+/**
+ * The event each trigger listens on. `interval` has none — it runs off `tick`.
+ * The `*_hp_below` pair rides the matching damage event and checks its threshold.
+ */
+const TRIGGER_EVENT: Record<BoonTrigger, FightEventType | undefined> = {
+  fight_start: 'fight_start',
+  interval: undefined,
+  hero_cast: 'hero_cast',
+  hero_attack: 'hero_attack',
+  hero_taunt: 'hero_taunt',
+  boss_damaged: 'boss_damaged',
+  hero_damaged: 'hero_damaged',
+  hero_healed: 'hero_healed',
+  hero_shielded: 'hero_shielded',
+  hero_death: 'hero_death',
+  overheal: 'overheal',
+  shield_broken: 'shield_broken',
+  boss_hp_below: 'boss_damaged',
+  hero_hp_below: 'hero_damaged',
+};
+
+/** Per-fight bookkeeping of one owned trigger boon: nth counter, own cooldown, once-flag. */
+interface TriggerSlot {
+  boon: BoonDef;
+  n: number;
+  cd: number;
+  sinceMs: number;
+  used: boolean;
+}
+
+const DEFAULT_INTERVAL_MS = 5000;
 
 /** Tie-break when several heroes sit on the same threat (notably 0 at fight start). */
 const ROLE_AGGRO_PRIORITY: Record<HeroRole, number> = { tank: 2, dps: 1, heal: 0 };
@@ -53,6 +87,11 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   /** The party (and the boss) hold their idle until the first ability of the fight. */
   started = false;
 
+  /** Owned trigger boons, one slot per copy — two copies fire twice. */
+  private triggers: TriggerSlot[] = [];
+  /** A trigger's own payload never wakes another trigger: one level deep, no chains. */
+  private firing = false;
+
   constructor(heroDefs: HeroDef[], bossDef: BossDef) {
     super();
     this.heroes = heroDefs.map((def, i) => ({
@@ -96,7 +135,35 @@ export class FightEngine extends Phaser.Events.EventEmitter {
 
     this.outcome = 'ongoing';
     this.started = false;
-    this.emit('fight', { type: 'boss_spawn', level: this.level } as FightEvent);
+    this.resetTriggers();
+    this.signal({ type: 'boss_spawn', level: this.level });
+  }
+
+  /** The run's boons. Stat boons are already baked into the defs — only triggers land here. */
+  setBoons(boons: BoonDef[]): void {
+    this.triggers = boons
+      .filter(b => b.trigger)
+      .map(boon => ({ boon, n: 0, cd: 0, sinceMs: 0, used: false }));
+  }
+
+  private resetTriggers(): void {
+    for (const t of this.triggers) {
+      t.n = 0;
+      t.cd = 0;
+      t.sinceMs = 0;
+      t.used = false;
+    }
+  }
+
+  /** Every state change leaves through here: views get the event, boons get a chance to fire. */
+  private signal(ev: FightEvent): void {
+    this.emit('fight', ev);
+    if (this.triggers.length === 0 || this.firing) return;
+    for (const t of this.triggers) {
+      if (TRIGGER_EVENT[t.boon.trigger!.on] === ev.type && this.passes(t, ev)) {
+        this.runAction(t.boon, t.boon.trigger!.do, ev);
+      }
+    }
   }
 
   hero(id: string): HeroState | undefined {
@@ -138,6 +205,9 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   tick(deltaMs: number): void {
     if (this.outcome !== 'ongoing' || !this.started) return;
 
+    this.tickTriggers(deltaMs);
+    if (this.outcome !== 'ongoing') return;
+
     this.tickDots(deltaMs);
     if (this.outcome !== 'ongoing') return;
 
@@ -158,12 +228,27 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       this.boss.attackCd += this.boss.def.attackIntervalMs;
       const target = this.pickBossTarget();
       if (target) {
-        this.emit('fight', { type: 'boss_attack', heroId: target.def.id } as FightEvent);
+        this.signal({ type: 'boss_attack', heroId: target.def.id });
         this.damageHero(target, this.boss.def.attack);
       }
     }
 
     this.checkEnd();
+  }
+
+  /** Runs every trigger boon's own clocks: internal cooldowns and `interval` payloads. */
+  private tickTriggers(deltaMs: number): void {
+    for (const t of this.triggers) {
+      if (t.cd > 0) t.cd = Math.max(0, t.cd - deltaMs);
+      const spec = t.boon.trigger!;
+      if (spec.on !== 'interval') continue;
+      const period = spec.when?.intervalMs ?? DEFAULT_INTERVAL_MS;
+      t.sinceMs += deltaMs;
+      while (t.sinceMs >= period && this.outcome === 'ongoing') {
+        t.sinceMs -= period;
+        this.runAction(t.boon, spec.do, {});
+      }
+    }
   }
 
   /** Expire finished buffs; the survivors keep shortening this hero's swings. */
@@ -185,7 +270,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       while (dot.sinceTick >= dot.tickMs && this.boss.alive) {
         dot.sinceTick -= dot.tickMs;
         // damageBoss already emits `boss_damaged`, so the tick shows up like any other hit.
-        this.damageBoss(dot.damage, this.hero(dot.sourceId));
+        this.damageBoss(dot.damage, this.hero(dot.sourceId), true);
       }
     }
     const live = this.boss.dots.filter(d => d.remainingMs > 0);
@@ -199,11 +284,11 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     if (h.def.role === 'heal') {
       const target = lowestHpAlly(this.heroes);
       if (!target || target.hp >= target.def.maxHp) return;
-      this.emit('fight', { type: 'hero_attack', heroId: h.def.id, targetHeroId: target.def.id } as FightEvent);
+      this.signal({ type: 'hero_attack', heroId: h.def.id, targetHeroId: target.def.id });
       this.healHero(target, power, h);
       return;
     }
-    this.emit('fight', { type: 'hero_attack', heroId: h.def.id } as FightEvent);
+    this.signal({ type: 'hero_attack', heroId: h.def.id });
     this.damageBoss(power, h);
   }
 
@@ -226,9 +311,9 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     // The party idles until someone opens with an ability — that cast starts the fight.
     if (!this.started) {
       this.started = true;
-      this.emit('fight', { type: 'fight_start' } as FightEvent);
+      this.signal({ type: 'fight_start' });
     }
-    this.emit('fight', { type: 'hero_cast', heroId, targetHeroId: target?.def.id } as FightEvent);
+    this.signal({ type: 'hero_cast', heroId, targetHeroId: target?.def.id });
 
     this.resolveAbility(ability, h, target);
 
@@ -239,8 +324,8 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   /** Every ability primitive, applied in order. `target` is set for ally-targeted casts. */
   private resolveAbility(a: Ability, h: HeroState, target?: HeroState): void {
     if (a.taunt) this.applyTaunt(h);
-    if (a.selfShield) this.shieldHero(h, a.selfShield);
-    if (a.allyShield && target) this.shieldHero(target, a.allyShield);
+    if (a.selfShield) this.shieldHero(h, a.selfShield, h);
+    if (a.allyShield && target) this.shieldHero(target, a.allyShield, h);
 
     const dealt = this.abilityDamage(a);
     if (dealt) {
@@ -255,7 +340,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     }
     if (a.bossStunMs) {
       this.boss.attackCd += a.bossStunMs;
-      this.emit('fight', { type: 'boss_stunned', amount: a.bossStunMs } as FightEvent);
+      this.signal({ type: 'boss_stunned', amount: a.bossStunMs });
     }
 
     if (a.heal && target) this.healHero(target, a.heal, h);
@@ -275,10 +360,10 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     return hpPct <= a.executeBelowPct ? base + a.executeBonus : base;
   }
 
-  private shieldHero(h: HeroState, amount: number): void {
+  private shieldHero(h: HeroState, amount: number, source?: HeroState): void {
     if (!h.alive) return;
     h.shield += amount;
-    this.emit('fight', { type: 'hero_shielded', heroId: h.def.id, amount } as FightEvent);
+    this.signal({ type: 'hero_shielded', heroId: h.def.id, amount, sourceHeroId: source?.def.id });
   }
 
   private applyBuff(a: Ability, caster: HeroState, target?: HeroState): void {
@@ -287,14 +372,98 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       buff.target === 'party' ? this.heroes
       : buff.target === 'ally' ? [target ?? caster]
       : [caster];
-    for (const h of receivers) {
-      if (!h.alive) continue;
-      h.buffs.push({
-        attackPct: buff.attackPct ?? 0,
-        attackSpeedPct: buff.attackSpeedPct ?? 0,
-        remainingMs: buff.durationMs,
-      });
-      this.emit('fight', { type: 'hero_buffed', heroId: h.def.id, amount: buff.durationMs } as FightEvent);
+    for (const h of receivers) this.grantBuff(h, buff);
+  }
+
+  /** The one place a timed buff is planted — abilities and boon triggers share it. */
+  private grantBuff(h: HeroState, buff: TimedBuff): void {
+    if (!h.alive) return;
+    h.buffs.push({
+      attackPct: buff.attackPct ?? 0,
+      attackSpeedPct: buff.attackSpeedPct ?? 0,
+      remainingMs: buff.durationMs,
+    });
+    this.signal({ type: 'hero_buffed', heroId: h.def.id, amount: buff.durationMs });
+  }
+
+  /** Conditions of one trigger slot. Counters and cooldowns are consumed only on a pass. */
+  private passes(t: TriggerSlot, ev: FightEvent): boolean {
+    const spec = t.boon.trigger!;
+    const w = spec.when ?? {};
+    const subject = ev.heroId ? this.hero(ev.heroId) : undefined;
+    const source = (ev.sourceHeroId ? this.hero(ev.sourceHeroId) : undefined) ?? subject;
+    // Actor-less triggers (fight start) skip the gate — their targets resolve by scope.
+    const gate = w.gate === 'actor' ? subject : source;
+    if (gate && !boonAffects(t.boon, gate.def)) return false;
+    if (w.fromDot && !ev.fromDot) return false;
+    if (spec.on === 'boss_hp_below') {
+      if ((this.boss.hp / this.boss.def.maxHp) * 100 > (w.pct ?? 0)) return false;
+    }
+    if (spec.on === 'hero_hp_below') {
+      if (!subject || !subject.alive) return false;
+      if ((subject.hp / subject.def.maxHp) * 100 > (w.pct ?? 0)) return false;
+    }
+    if (t.cd > 0) return false;
+    if (w.oncePerFight && t.used) return false;
+    if (w.everyNth && ++t.n % w.everyNth !== 0) return false;
+    if (w.internalCdMs) t.cd = w.internalCdMs;
+    if (w.oncePerFight) t.used = true;
+    return true;
+  }
+
+  /** Applies a trigger payload through the ordinary primitives, so views animate it as usual. */
+  private runAction(boon: BoonDef, act: BoonAction, ev: Omit<FightEvent, 'type'>): void {
+    if (this.firing) return;
+    this.firing = true;
+    try {
+      const subject = ev.heroId ? this.hero(ev.heroId) : undefined;
+      const source = (ev.sourceHeroId ? this.hero(ev.sourceHeroId) : undefined) ?? subject;
+      const targets = this.actionTargets(boon, act.target ?? 'actor', subject, source);
+      const amount = ev.amount ?? 0;
+
+      const dmg = (act.bossDamage ?? 0) + Math.round((amount * (act.bossDamagePctOfAmount ?? 0)) / 100);
+      if (dmg > 0) this.damageBoss(dmg, source);
+
+      const heal = (act.heal ?? 0) + Math.round((amount * (act.healPctOfAmount ?? 0)) / 100);
+      for (const h of targets) {
+        if (heal > 0) this.healHero(h, heal);
+        if (act.shield) this.shieldHero(h, act.shield);
+        if (act.buff) this.grantBuff(h, act.buff);
+        if (act.refundCdMs) h.abilityCd = Math.max(0, h.abilityCd - act.refundCdMs);
+        if (act.taunt) this.applyTaunt(h);
+      }
+
+      if (act.dot && this.boss.alive) {
+        this.boss.dots.push({
+          damage: act.dot.damage, tickMs: act.dot.tickMs,
+          remainingMs: act.dot.durationMs, sinceTick: 0, sourceId: source?.def.id ?? '',
+        });
+      }
+      if (act.bossStunMs) {
+        this.boss.attackCd += act.bossStunMs;
+        this.signal({ type: 'boss_stunned', amount: act.bossStunMs });
+      }
+      if (act.repeatCast && source?.alive) {
+        const ally = ev.targetHeroId ? this.hero(ev.targetHeroId) : undefined;
+        this.resolveAbility(source.def.ability, source, ally);
+      }
+    } finally {
+      this.firing = false;
+    }
+    this.checkEnd();
+  }
+
+  private actionTargets(
+    boon: BoonDef, kind: BoonTargetKind, subject?: HeroState, source?: HeroState,
+  ): HeroState[] {
+    const living = this.heroes.filter(h => h.alive);
+    switch (kind) {
+      case 'source': return source?.alive ? [source] : [];
+      case 'others': return living.filter(h => h !== subject);
+      case 'lowest': { const low = lowestHpAlly(this.heroes); return low ? [low] : []; }
+      case 'party': return living;
+      case 'scope': return living.filter(h => boonAffects(boon, h.def));
+      default: return subject?.alive ? [subject] : [];
     }
   }
 
@@ -302,7 +471,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   private applyTaunt(h: HeroState): void {
     for (const other of this.heroes) other.threat = 0;
     h.threat = TAUNT_THREAT;
-    this.emit('fight', { type: 'hero_taunt', heroId: h.def.id } as FightEvent);
+    this.signal({ type: 'hero_taunt', heroId: h.def.id });
   }
 
   private addThreat(h: HeroState, amount: number): void {
@@ -315,23 +484,27 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     return this.topThreatHero();
   }
 
-  private damageBoss(amount: number, source?: HeroState): void {
+  private damageBoss(amount: number, source?: HeroState, fromDot = false): void {
     if (!this.boss.alive) return;
     this.boss.hp = Math.max(0, this.boss.hp - amount);
     if (source) this.addThreat(source, amount);
-    this.emit('fight', { type: 'boss_damaged', amount } as FightEvent);
     if (this.boss.hp === 0) this.boss.alive = false;
+    this.signal({ type: 'boss_damaged', amount, sourceHeroId: source?.def.id, fromDot });
   }
 
   private damageHero(h: HeroState, amount: number): void {
     const absorbed = Math.min(h.shield, amount);
     h.shield -= absorbed;
     h.hp = Math.max(0, h.hp - (amount - absorbed));
-    this.emit('fight', { type: 'hero_damaged', heroId: h.def.id, amount } as FightEvent);
+    this.signal({ type: 'hero_damaged', heroId: h.def.id, amount });
+    // A shield that just ran out is its own event — boons build on the moment it pops.
+    if (absorbed > 0 && h.shield === 0 && h.alive) {
+      this.signal({ type: 'shield_broken', heroId: h.def.id, amount: absorbed });
+    }
     if (h.hp === 0) {
       h.alive = false;
       h.shield = 0;
-      this.emit('fight', { type: 'hero_death', heroId: h.def.id } as FightEvent);
+      this.signal({ type: 'hero_death', heroId: h.def.id });
     }
   }
 
@@ -340,7 +513,11 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     const applied = Math.min(amount, h.def.maxHp - h.hp);
     h.hp += applied;
     if (source) this.addThreat(source, applied);
-    this.emit('fight', { type: 'hero_healed', heroId: h.def.id, amount: applied } as FightEvent);
+    this.signal({ type: 'hero_healed', heroId: h.def.id, amount: applied, sourceHeroId: source?.def.id });
+    const wasted = amount - applied;
+    if (wasted > 0) {
+      this.signal({ type: 'overheal', heroId: h.def.id, amount: wasted, sourceHeroId: source?.def.id });
+    }
   }
 
   private checkEnd(): void {
@@ -348,6 +525,6 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     if (!this.boss.alive) this.outcome = 'victory';
     else if (this.heroes.every(h => !h.alive)) this.outcome = 'defeat';
     else return;
-    this.emit('fight', { type: 'end', outcome: this.outcome, level: this.level } as FightEvent);
+    this.signal({ type: 'end', outcome: this.outcome, level: this.level });
   }
 }

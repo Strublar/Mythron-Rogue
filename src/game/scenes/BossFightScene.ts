@@ -239,6 +239,8 @@ export class BossFightScene extends Phaser.Scene {
     if (this.ended) return;
     this.frozen = false;
     this.input.enabled = true;
+    // Stat boons ride in the defs; trigger boons need the engine to hold them.
+    this.engine.setBoons(this.run.boons);
     this.engine.startNextBoss(bossForLevel(this.engine.level + 1), this.run.heroDefs());
   }
 

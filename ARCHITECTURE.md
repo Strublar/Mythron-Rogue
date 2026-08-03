@@ -102,6 +102,15 @@ main.ts
   twice the Magmar offers. `'party'` rides the same draw on a flat weight. Tag boons come
   in two shapes: flat, or `perMember` — percentages multiplied by how many heroes the
   scope covers, which is what rewards stacking a tag.
+- **Trigger boons.** A boon carries `effect` (permanent stats), `trigger` (a `BoonTriggerSpec`),
+  or both. A trigger is `on` (fight event or `interval`) + `when` (scope gate, threshold,
+  1-in-N, internal cooldown, once-per-fight) + `do` (boss damage, heal, shield, timed buff,
+  dot, cooldown refund, stagger, taunt, free recast). Every engine state change leaves through
+  `FightEngine.signal`, which emits the `FightEvent` and then walks the owned triggers;
+  `runAction` resolves payloads through the ordinary primitives, so views animate them for
+  free. Trigger payloads never wake other triggers (`firing` guard, one level deep). Owning a
+  boon twice fires it twice — no percentage stacking. `setBoons` hands the engine the run's
+  boons; per-fight counters reset in `startNextBoss`.
 - **Boons.** `RunState` holds every boon picked this run; `applyBoons` re-derives the whole
   roster from the chosen party (never mutating it) and `FightEngine.startNextBoss` swaps the
   new defs in. Percentages are additive across stacks; speed/cooldown bonuses are haste
