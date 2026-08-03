@@ -24,6 +24,11 @@ export class RunState {
     return this.defs;
   }
 
+  /** The unbuffed party — what boon rolls and per-member scaling count tags on. */
+  baseDefs(): HeroDef[] {
+    return this.base;
+  }
+
   addBoon(boon: BoonDef): void {
     this.boons.push(boon);
     this.defs = applyBoons(this.base, this.boons);

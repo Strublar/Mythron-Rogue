@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import type { Ability, AbilityBuff, HeroDef, HeroRole } from '../types';
+import { tagStrip } from '../data/heroes';
 import { GAME_HEIGHT, GAME_WIDTH, ROLE_COLOR } from './layout';
 
 const PANEL_W = 420;
@@ -84,7 +85,8 @@ export class HeroTooltip {
 
     let y = PAD;
     y = this.line(hero.name.toUpperCase(), 26, accent, y, 'bold');
-    y = this.line(ROLE_LABEL[hero.role], 16, MUTED, y) + GAP;
+    y = this.line(ROLE_LABEL[hero.role], 16, MUTED, y);
+    y = this.line(tagStrip(hero), 15, GOLD, y) + GAP;
     y = this.rule(y);
 
     y = this.stat('HP', hero.maxHp.toLocaleString(), y);

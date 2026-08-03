@@ -69,9 +69,10 @@ export class InterludeScene extends Phaser.Scene {
     this.label(cx, 203, `LEVEL ${data.clearedLevel} CLEARED`, 22, '#f3e6c8');
     this.label(cx, 240, 'CHOOSE A BOON', 24, '#9aa3b8', 'bold');
 
-    rollBoons(OFFER_COUNT).forEach((boon, i) => {
+    const party = this.run.baseDefs();
+    rollBoons(OFFER_COUNT, party).forEach((boon, i) => {
       const y = CARD.top + (CARD.h + CARD.gap) * i + CARD.h / 2;
-      const handle = createBoonCard(this, cx, y, CARD.w, CARD.h, boon, b => this.select(b), BUTTON_DEPTH);
+      const handle = createBoonCard(this, cx, y, CARD.w, CARD.h, boon, party, b => this.select(b), BUTTON_DEPTH);
       this.cards.push({ boon, handle });
     });
 
@@ -79,7 +80,7 @@ export class InterludeScene extends Phaser.Scene {
     this.confirm.setEnabled(false);
 
     this.boonList = new BoonListPanel(this);
-    createButton(this, cx, BOONS_BUTTON_Y, 'BOONS', () => this.boonList.show(this.run.stacks()), BUTTON_DEPTH);
+    createButton(this, cx, BOONS_BUTTON_Y, 'BOONS', () => this.boonList.show(this.run.stacks(), this.run.baseDefs()), BUTTON_DEPTH);
 
     new HeroInspector(this).addProbes(this.run.heroDefs());
   }
@@ -102,7 +103,7 @@ export class InterludeScene extends Phaser.Scene {
     this.rings = [];
 
     for (const { def, slot } of withSlots(this.run.heroDefs())) {
-      if (!boonAffects(boon, def.role)) continue;
+      if (!boonAffects(boon, def)) continue;
       const ring = this.add
         .ellipse(slot.x, slot.y + HERO_GROUND_DY, RING_W, RING_W * 0.38)
         .setStrokeStyle(4, RING_COLOR, 1)
