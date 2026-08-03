@@ -60,7 +60,8 @@ export class BoonListPanel {
 
   /** Percentages are additive per stack, so the list shows the total, not the unit value. */
   private stackedText(boon: BoonStack['boon'], count: number, party: HeroDef[]): string {
-    if (count === 1) return boonText(boon, party);
+    // A trigger boon doesn't scale its numbers — every copy simply fires on its own.
+    if (count === 1 || !boon.effect) return boonText(boon, party);
     const effect = Object.fromEntries(
       Object.entries(boon.effect).map(([k, v]) => [k, (v as number) * count]),
     );
