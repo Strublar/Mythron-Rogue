@@ -2,6 +2,15 @@
 
 export type HeroRole = 'tank' | 'dps' | 'heal';
 
+/**
+ * Identity tags every hero carries: one faction, one archetype. Boons roll on tags,
+ * so a party stacked on a tag draws more boons for it — that is the synergy loop.
+ */
+export type HeroFaction =
+  | 'lyonar' | 'songhai' | 'vetruvian' | 'abyssian' | 'magmar' | 'vanar' | 'mercenary';
+export type HeroArchetype = 'arcanyst' | 'blade' | 'golem' | 'beast' | 'blood';
+export type HeroTag = HeroFaction | HeroArchetype;
+
 /** Where a dragged ability may be dropped. */
 export type AbilityTargetKind = 'boss' | 'ally';
 
@@ -46,6 +55,7 @@ export interface HeroDef {
   unitKey: string;      // key into UNIT_DEFS
   name: string;
   role: HeroRole;
+  tags: HeroTag[];      // faction + archetype — what tag boons key off
   maxHp: number;
   attack: number;       // auto-attack damage — heal amount for healers
   attackIntervalMs: number;
@@ -79,8 +89,8 @@ export interface HeroState {
   buffs: ActiveBuff[];
 }
 
-/** Who a boon buffs: one role, or every hero. */
-export type BoonScope = HeroRole | 'party';
+/** Who a boon buffs: one role, one tag, or every hero. */
+export type BoonScope = HeroRole | HeroTag | 'party';
 
 /** Every field is a percent bonus, additive across stacks of the same effect. */
 export interface BoonEffect {
@@ -97,6 +107,8 @@ export interface BoonDef {
   name: string;
   scope: BoonScope;
   effect: BoonEffect;
+  /** Percentages multiply by how many heroes in the party the scope covers. */
+  perMember?: boolean;
 }
 
 export interface BossDef {

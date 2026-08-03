@@ -95,6 +95,13 @@ main.ts
 - **Threat.** Damage dealt and hp healed add threat, weighted per role
   (`ROLE_THREAT_MULTIPLIER`); the boss always swings at the highest-threat living hero.
   A tank ability is a taunt: it wipes party threat and plants `TAUNT_THREAT` on the caster.
+- **Tags.** Every hero carries two `HeroTag`s — a faction (`lyonar` … `mercenary`) and an
+  archetype (`arcanyst`, `blade`, `golem`, `beast`, `blood`). Tags are the synergy axis:
+  each offer slot rolls a scope weighted by how often it occurs in the party
+  (`scopeWeights`), then draws a boon of that scope, so 4 Magmar to 2 Arcanysts means
+  twice the Magmar offers. `'party'` rides the same draw on a flat weight. Tag boons come
+  in two shapes: flat, or `perMember` — percentages multiplied by how many heroes the
+  scope covers, which is what rewards stacking a tag.
 - **Boons.** `RunState` holds every boon picked this run; `applyBoons` re-derives the whole
   roster from the chosen party (never mutating it) and `FightEngine.startNextBoss` swaps the
   new defs in. Percentages are additive across stacks; speed/cooldown bonuses are haste

@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { boonText } from '../data/boons';
 import type { BoonStack } from '../engine/RunState';
+import type { HeroDef } from '../types';
 import { BOON_CREAM, BOON_GOLD, BOON_MUTED } from './BoonCard';
 import { GAME_HEIGHT, GAME_WIDTH } from './layout';
 
@@ -30,7 +31,7 @@ export class BoonListPanel {
     this.root = scene.add.container(0, 0, [this.bg]).setDepth(depth + 1).setVisible(false);
   }
 
-  show(stacks: BoonStack[]): void {
+  show(stacks: BoonStack[], party: HeroDef[]): void {
     for (const child of this.root.list.slice(1)) child.destroy();
 
     let y = PAD;
@@ -39,7 +40,7 @@ export class BoonListPanel {
 
     for (const { boon, count } of stacks.slice(0, MAX_ROWS)) {
       y = this.line(count > 1 ? `${boon.name} ×${count}` : boon.name, 22, BOON_CREAM, y, 'bold');
-      y = this.line(this.stackedText(boon, count), 17, BOON_MUTED, y) + ROW_GAP;
+      y = this.line(this.stackedText(boon, count, party), 17, BOON_MUTED, y) + ROW_GAP;
     }
     const hidden = stacks.length - MAX_ROWS;
     if (hidden > 0) y = this.line(`+${hidden} more`, 17, BOON_MUTED, y);
@@ -58,12 +59,12 @@ export class BoonListPanel {
   }
 
   /** Percentages are additive per stack, so the list shows the total, not the unit value. */
-  private stackedText(boon: BoonStack['boon'], count: number): string {
-    if (count === 1) return boonText(boon);
+  private stackedText(boon: BoonStack['boon'], count: number, party: HeroDef[]): string {
+    if (count === 1) return boonText(boon, party);
     const effect = Object.fromEntries(
       Object.entries(boon.effect).map(([k, v]) => [k, (v as number) * count]),
     );
-    return boonText({ ...boon, effect });
+    return boonText({ ...boon, effect }, party);
   }
 
   private line(text: string, size: number, color: string, y: number, style = ''): number {

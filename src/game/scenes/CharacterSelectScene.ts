@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { DEFAULT_PARTY, heroesByRole } from '../../data/heroes';
+import { DEFAULT_PARTY, TAG_LABEL, heroesByRole, partyTags } from '../../data/heroes';
 import type { HeroDef, HeroRole } from '../../types';
 import { createUnitSprite } from '../UnitAnimator';
 import { createHeroCard } from '../HeroCard';
@@ -37,6 +37,8 @@ export class CharacterSelectScene extends Phaser.Scene {
   private inspector!: HeroInspector;
   /** Set when a press turned into an inspect — that release must not also count as a tap. */
   private inspected = false;
+  /** Tag counts of the current picks — what the run's boon rolls will be weighted by. */
+  private synergy!: Phaser.GameObjects.Text;
 
   constructor() {
     super({ key: 'CharacterSelectScene' });
@@ -53,11 +55,13 @@ export class CharacterSelectScene extends Phaser.Scene {
 
     this.drawBackground();
     this.label(GAME_WIDTH / 2, 46, 'BUILD YOUR PARTY', 38, '#ffd76b', 'bold');
-    this.label(GAME_WIDTH / 2, 88, 'Tap a hero to swap it · hold for stats', 18, '#9aa3b8');
+    this.label(GAME_WIDTH / 2, 84, 'Tap a hero to swap it · hold for stats', 18, '#9aa3b8');
+    this.synergy = this.label(GAME_WIDTH / 2, 110, '', 16, '#ffd76b', 'bold');
 
     this.inspector = new HeroInspector(this);
     this.inspector.onOpen = () => { this.inspected = true; };
     for (const role of ROLE_ORDER) this.party[role].forEach((_, i) => this.buildSlot(role, i));
+    this.drawSynergy();
 
     createButton(this, GAME_WIDTH / 2, START_BUTTON_Y, 'START RUN', () => this.startRun());
   }
@@ -169,6 +173,17 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.closeGrid();
     this.party[role][index] = hero;
     this.buildSlot(role, index);
+    this.drawSynergy();
+  }
+
+  /** Only tags shared by 2+ heroes matter — those are the ones that pull boon offers. */
+  private drawSynergy(): void {
+    const shared = partyTags(this.orderedParty()).filter(t => t.count > 1);
+    this.synergy.setText(
+      shared.length === 0
+        ? 'No shared tags — boons will roll wide'
+        : shared.map(t => `${TAG_LABEL[t.tag].toUpperCase()} ×${t.count}`).join('  ·  '),
+    );
   }
 
   // ── Chrome ──────────────────────────────────────────────────────────────────

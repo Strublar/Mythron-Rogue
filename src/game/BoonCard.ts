@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { boonText } from '../data/boons';
-import type { BoonDef } from '../types';
+import type { BoonDef, HeroDef } from '../types';
 
 export const BOON_GOLD = '#ffd76b';
 export const BOON_CREAM = '#f3e6c8';
@@ -12,7 +12,10 @@ export interface BoonCardHandle {
   setSelected(on: boolean): void;
 }
 
-/** Tappable offer card: boon name plus its generated effect line. Tap selects, never commits. */
+/**
+ * Tappable offer card: boon name plus its generated effect line. Tap selects, never commits.
+ * `party` resolves per-member boons into the total they land for on this exact party.
+ */
 export function createBoonCard(
   scene: Phaser.Scene,
   x: number,
@@ -20,6 +23,7 @@ export function createBoonCard(
   w: number,
   h: number,
   boon: BoonDef,
+  party: HeroDef[],
   onSelect: (boon: BoonDef) => void,
   depth = 0,
 ): BoonCardHandle {
@@ -36,7 +40,7 @@ export function createBoonCard(
     .setOrigin(0, 0)
     .setDepth(depth + 1);
   scene.add
-    .text(left, y - h / 2 + PAD + 34, boonText(boon), {
+    .text(left, y - h / 2 + PAD + 34, boonText(boon, party), {
       fontFamily: 'Lato', fontSize: '18px', color: BOON_CREAM,
       wordWrap: { width: w - PAD * 2 },
     })
