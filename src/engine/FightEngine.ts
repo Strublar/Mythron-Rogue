@@ -3,8 +3,8 @@ import { boonAffects } from '../data/boons';
 import { ROLE_THREAT_MULTIPLIER, TAUNT_THREAT } from '../data/heroes';
 import { haste } from '../data/statMath';
 import type {
-  Ability, BoonAction, BoonDef, BoonTargetKind, BoonTrigger, BossDef, BossState, FightEvent, FightEventType,
-  FightOutcome, HeroDef, HeroRole, HeroState, TimedBuff,
+  Ability, BoonAction, BoonDef, BoonTargetKind, BoonTrigger, BoonTriggerSpec, BossDef, BossState,
+  FightEvent, FightEventType, FightOutcome, HeroDef, HeroRole, HeroState, TimedBuff,
 } from '../types';
 
 /** Sentinel target id meaning "the boss" for ability casts. */
@@ -31,13 +31,23 @@ const TRIGGER_EVENT: Record<BoonTrigger, FightEventType | undefined> = {
   hero_hp_below: 'hero_damaged',
 };
 
-/** Per-fight bookkeeping of one owned trigger boon: nth counter, own cooldown, once-flag. */
+/**
+ * Per-fight bookkeeping of one owned trigger: nth counter, own cooldown, once-flag.
+ * A slot comes either from a boon (party-wide, gated by `boonAffects`) or from a hero's
+ * passive (`ownerId` set — only that hero's events wake it, and `'scope'` is that hero).
+ */
 interface TriggerSlot {
-  boon: BoonDef;
+  spec: BoonTriggerSpec;
+  boon?: BoonDef;
+  ownerId?: string;
   n: number;
   cd: number;
   sinceMs: number;
   used: boolean;
+}
+
+function triggerSlot(from: Pick<TriggerSlot, 'spec' | 'boon' | 'ownerId'>): TriggerSlot {
+  return { ...from, n: 0, cd: 0, sinceMs: 0, used: false };
 }
 
 const DEFAULT_INTERVAL_MS = 5000;
@@ -87,8 +97,10 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   /** The party (and the boss) hold their idle until the first ability of the fight. */
   started = false;
 
-  /** Owned trigger boons, one slot per copy — two copies fire twice. */
+  /** Owned triggers: one slot per boon copy — two copies fire twice — plus hero passives. */
   private triggers: TriggerSlot[] = [];
+  /** The run's boons, kept so passives can be re-slotted without losing them. */
+  private boons: BoonDef[] = [];
   /** A trigger's own payload never wakes another trigger: one level deep, no chains. */
   private firing = false;
 
@@ -107,6 +119,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.boss = {
       def: bossDef, hp: bossDef.maxHp, alive: true, attackCd: bossDef.attackIntervalMs, dots: [],
     };
+    this.rebuildTriggers();
   }
 
   /**
@@ -135,24 +148,31 @@ export class FightEngine extends Phaser.Events.EventEmitter {
 
     this.outcome = 'ongoing';
     this.started = false;
-    this.resetTriggers();
+    this.rebuildTriggers();
     this.signal({ type: 'boss_spawn', level: this.level });
   }
 
   /** The run's boons. Stat boons are already baked into the defs — only triggers land here. */
   setBoons(boons: BoonDef[]): void {
-    this.triggers = boons
-      .filter(b => b.trigger)
-      .map(boon => ({ boon, n: 0, cd: 0, sinceMs: 0, used: false }));
+    this.boons = boons;
+    this.rebuildTriggers();
   }
 
-  private resetTriggers(): void {
-    for (const t of this.triggers) {
-      t.n = 0;
-      t.cd = 0;
-      t.sinceMs = 0;
-      t.used = false;
-    }
+  /** Fresh slots for the boons owned and the passives the party's current defs carry. */
+  private rebuildTriggers(): void {
+    this.triggers = [
+      ...this.boons
+        .filter(b => b.trigger)
+        .map(boon => triggerSlot({ spec: boon.trigger!, boon })),
+      ...this.heroes
+        .filter(h => h.def.passive)
+        .map(h => triggerSlot({ spec: h.def.passive!.trigger, ownerId: h.def.id })),
+    ];
+  }
+
+  /** Whose events a slot listens to: its passive's owner, or every hero its boon scopes. */
+  private slotCovers(t: TriggerSlot, def: HeroDef): boolean {
+    return t.ownerId ? t.ownerId === def.id : !!t.boon && boonAffects(t.boon, def);
   }
 
   /** Every state change leaves through here: views get the event, boons get a chance to fire. */
@@ -160,8 +180,8 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.emit('fight', ev);
     if (this.triggers.length === 0 || this.firing) return;
     for (const t of this.triggers) {
-      if (TRIGGER_EVENT[t.boon.trigger!.on] === ev.type && this.passes(t, ev)) {
-        this.runAction(t.boon, t.boon.trigger!.do, ev);
+      if (TRIGGER_EVENT[t.spec.on] === ev.type && this.passes(t, ev)) {
+        this.runAction(t, t.spec.do, ev);
       }
     }
   }
@@ -240,13 +260,13 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   private tickTriggers(deltaMs: number): void {
     for (const t of this.triggers) {
       if (t.cd > 0) t.cd = Math.max(0, t.cd - deltaMs);
-      const spec = t.boon.trigger!;
-      if (spec.on !== 'interval') continue;
+      const spec = t.spec;
+      if (spec.on !== 'interval' || !this.ownerAlive(t)) continue;
       const period = spec.when?.intervalMs ?? DEFAULT_INTERVAL_MS;
       t.sinceMs += deltaMs;
       while (t.sinceMs >= period && this.outcome === 'ongoing') {
         t.sinceMs -= period;
-        this.runAction(t.boon, spec.do, {});
+        this.runAction(t, spec.do, {});
       }
     }
   }
@@ -386,15 +406,21 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.signal({ type: 'hero_buffed', heroId: h.def.id, amount: buff.durationMs });
   }
 
+  /** A dead hero's passive lies dormant; boon slots have no owner to check. */
+  private ownerAlive(t: TriggerSlot): boolean {
+    return !t.ownerId || !!this.hero(t.ownerId)?.alive;
+  }
+
   /** Conditions of one trigger slot. Counters and cooldowns are consumed only on a pass. */
   private passes(t: TriggerSlot, ev: FightEvent): boolean {
-    const spec = t.boon.trigger!;
+    const spec = t.spec;
     const w = spec.when ?? {};
     const subject = ev.heroId ? this.hero(ev.heroId) : undefined;
     const source = (ev.sourceHeroId ? this.hero(ev.sourceHeroId) : undefined) ?? subject;
     // Actor-less triggers (fight start) skip the gate — their targets resolve by scope.
     const gate = w.gate === 'actor' ? subject : source;
-    if (gate && !boonAffects(t.boon, gate.def)) return false;
+    if (!this.ownerAlive(t)) return false;
+    if (gate && !this.slotCovers(t, gate.def)) return false;
     if (w.fromDot && !ev.fromDot) return false;
     if (spec.on === 'boss_hp_below') {
       if ((this.boss.hp / this.boss.def.maxHp) * 100 > (w.pct ?? 0)) return false;
@@ -412,13 +438,13 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   }
 
   /** Applies a trigger payload through the ordinary primitives, so views animate it as usual. */
-  private runAction(boon: BoonDef, act: BoonAction, ev: Omit<FightEvent, 'type'>): void {
+  private runAction(t: TriggerSlot, act: BoonAction, ev: Omit<FightEvent, 'type'>): void {
     if (this.firing) return;
     this.firing = true;
     try {
       const subject = ev.heroId ? this.hero(ev.heroId) : undefined;
       const source = (ev.sourceHeroId ? this.hero(ev.sourceHeroId) : undefined) ?? subject;
-      const targets = this.actionTargets(boon, act.target ?? 'actor', subject, source);
+      const targets = this.actionTargets(t, act.target ?? 'actor', subject, source);
       const amount = ev.amount ?? 0;
 
       const dmg = (act.bossDamage ?? 0) + Math.round((amount * (act.bossDamagePctOfAmount ?? 0)) / 100);
@@ -454,7 +480,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   }
 
   private actionTargets(
-    boon: BoonDef, kind: BoonTargetKind, subject?: HeroState, source?: HeroState,
+    t: TriggerSlot, kind: BoonTargetKind, subject?: HeroState, source?: HeroState,
   ): HeroState[] {
     const living = this.heroes.filter(h => h.alive);
     switch (kind) {
@@ -462,7 +488,8 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       case 'others': return living.filter(h => h !== subject);
       case 'lowest': { const low = lowestHpAlly(this.heroes); return low ? [low] : []; }
       case 'party': return living;
-      case 'scope': return living.filter(h => boonAffects(boon, h.def));
+      // A passive's scope is its owner alone; a boon's is every hero it covers.
+      case 'scope': return living.filter(h => this.slotCovers(t, h.def));
       default: return subject?.alive ? [subject] : [];
     }
   }

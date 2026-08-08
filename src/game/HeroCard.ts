@@ -1,11 +1,16 @@
 import Phaser from 'phaser';
-import type { HeroDef } from '../types';
+import type { HeroDef, HeroProgress } from '../types';
 import { tagStrip } from '../data/heroes';
+import { MAX_HERO_LEVEL, expToNext } from '../data/progression';
 import { UNIT_DEFS } from './UnitAnimator';
 import { BOON_CREAM, BOON_GOLD, BOON_MUTED } from './BoonCard';
+import { heroLevel } from './HeroTooltip';
 import { ROLE_COLOR } from './layout';
 
 const PAD = 8;
+const EXP_BAR_H = 6;
+/** Bar plus its caption — how much the text block lifts when an exp bar is drawn. */
+const EXP_ROW_H = 22;
 /** Portrait scale — the grid is dense, so cards run smaller than the battlefield. */
 const PORTRAIT_SCALE = 1.2;
 /** Atlas canvases vary (80–110px); clamp so the tall ones don't spill out of the card. */
@@ -18,6 +23,8 @@ export interface HeroCardOpts {
   taken: boolean;
   /** Currently occupying the slot being edited. */
   current: boolean;
+  /** Collection page: draws the exp bar under the stats and the passive marker. */
+  progress?: HeroProgress;
   /** Pointer down: arm the scene's long-press inspect. */
   onPressStart: (hero: HeroDef, x: number, y: number) => void;
   /** The gesture left the card without releasing on it. */
@@ -53,8 +60,10 @@ export function createHeroCard(
     .setDepth(depth + 1);
   portrait.setScale(Math.min(PORTRAIT_SCALE, PORTRAIT_MAX_H / portrait.height));
 
+  // The exp bar takes the bottom row, so the text block lifts to make room for it.
+  const lift = opts.progress ? EXP_ROW_H : 0;
   const label = scene.add
-    .text(x, y + h / 2 - PAD - 52, hero.name.toUpperCase(), {
+    .text(x, y + h / 2 - PAD - 52 - lift, hero.name.toUpperCase(), {
       fontFamily: 'Lato', fontSize: '14px', color: BOON_GOLD, fontStyle: 'bold',
       align: 'center', wordWrap: { width: w - PAD * 2 },
     })
@@ -63,18 +72,33 @@ export function createHeroCard(
 
   // Tags decide which boons the party draws, so they sit on the card, not just the popup.
   scene.add
-    .text(x, y + h / 2 - PAD - 33, tagStrip(hero), {
+    .text(x, y + h / 2 - PAD - 33 - lift, tagStrip(hero), {
       fontFamily: 'Lato', fontSize: '12px', color: BOON_MUTED, fontStyle: 'bold',
     })
     .setOrigin(0.5, 0)
     .setDepth(depth + 1);
 
   scene.add
-    .text(x, y + h / 2 - PAD - 14, statStrip(hero), {
+    .text(x, y + h / 2 - PAD - 14 - lift, statStrip(hero), {
       fontFamily: 'Lato', fontSize: '13px', color: BOON_CREAM,
     })
     .setOrigin(0.5, 0)
     .setDepth(depth + 1);
+
+  // Level rides every card — the picks on the party screen are leveled defs too.
+  drawLevelBadge(scene, x - w / 2 + PAD, y - h / 2 + PAD, heroLevel(hero), depth + 2);
+  if (opts.progress) {
+    drawExpBar(scene, x, y + h / 2 - PAD - EXP_ROW_H + 6, w - PAD * 4, opts.progress, depth + 2);
+  }
+  // A star marks the passive as live; the hold-to-inspect card spells it out.
+  if (hero.passive) {
+    scene.add
+      .text(x + w / 2 - PAD, y - h / 2 + PAD, '★', {
+        fontFamily: 'Lato', fontSize: '18px', color: BOON_GOLD,
+      })
+      .setOrigin(1, 0)
+      .setDepth(depth + 2);
+  }
 
   if (opts.taken) {
     // Fielded elsewhere: still inspectable, but tapping it would duplicate the hero.
@@ -102,6 +126,37 @@ export function createHeroCard(
     if (opts.taken) opts.onPressCancel();
     else opts.onTap(hero);
   });
+}
+
+/** `LVL n`, top-left. Maxed heroes read `MAX` instead of a number. */
+function drawLevelBadge(
+  scene: Phaser.Scene, x: number, y: number, level: number, depth: number,
+): void {
+  scene.add
+    .text(x, y, level >= MAX_HERO_LEVEL ? 'MAX' : `LVL ${level}`, {
+      fontFamily: 'Lato', fontSize: '14px', color: BOON_GOLD, fontStyle: 'bold',
+    })
+    .setOrigin(0, 0)
+    .setDepth(depth);
+}
+
+/** Progress toward the next level. A maxed hero gets a full bar and no numbers. */
+function drawExpBar(
+  scene: Phaser.Scene, x: number, y: number, w: number, p: HeroProgress, depth: number,
+): void {
+  const need = expToNext(p.level);
+  const ratio = need === 0 ? 1 : Phaser.Math.Clamp(p.exp / need, 0, 1);
+  scene.add.rectangle(x, y, w, EXP_BAR_H, 0x000000, 0.55).setDepth(depth);
+  scene.add
+    .rectangle(x - w / 2, y, w * ratio, EXP_BAR_H, need === 0 ? 0xffd76b : 0x7fd4ff, 0.9)
+    .setOrigin(0, 0.5)
+    .setDepth(depth + 1);
+  scene.add
+    .text(x, y + EXP_BAR_H, need === 0 ? 'MAX LEVEL' : `${p.exp} / ${need} EXP`, {
+      fontFamily: 'Lato', fontSize: '11px', color: BOON_MUTED,
+    })
+    .setOrigin(0.5, 0)
+    .setDepth(depth);
 }
 
 /** HP / attack-or-heal / swing interval, the three numbers that decide a pick. */

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import { DEFAULT_PARTY, TAG_LABEL, heroesByRole, partyTags } from '../../data/heroes';
+import { TAG_LABEL, defaultParty, heroesByRole, partyTags } from '../../data/heroes';
+import { leveledRoster } from '../../engine/ProgressionStore';
 import type { HeroDef, HeroRole } from '../../types';
 import { createUnitSprite } from '../UnitAnimator';
 import { createHeroCard } from '../HeroCard';
@@ -32,6 +33,8 @@ const hexColor = (color: number): string => `#${color.toString(16).padStart(6, '
  */
 export class CharacterSelectScene extends Phaser.Scene {
   private party!: Record<HeroRole, HeroDef[]>;
+  /** The roster at its earned levels — what both the slots and the grid pick from. */
+  private roster: HeroDef[] = [];
   private slotObjects = new Map<string, Phaser.GameObjects.GameObject[]>();
   private gridObjects: Phaser.GameObjects.GameObject[] = [];
   private inspector!: HeroInspector;
@@ -45,10 +48,14 @@ export class CharacterSelectScene extends Phaser.Scene {
   }
 
   create(): void {
+    // Levels earned in past runs are baked in here, once — everything downstream
+    // (boons, the engine, the stats card) reads these defs.
+    this.roster = leveledRoster();
+    const seed = defaultParty(this.roster);
     this.party = {
-      tank: DEFAULT_PARTY.filter(h => h.role === 'tank'),
-      dps: DEFAULT_PARTY.filter(h => h.role === 'dps'),
-      heal: DEFAULT_PARTY.filter(h => h.role === 'heal'),
+      tank: seed.filter(h => h.role === 'tank'),
+      dps: seed.filter(h => h.role === 'dps'),
+      heal: seed.filter(h => h.role === 'heal'),
     };
     this.slotObjects.clear();
     this.gridObjects = [];
@@ -126,7 +133,7 @@ export class CharacterSelectScene extends Phaser.Scene {
     // Everything drawn from here on belongs to the grid — diff the display list to sweep it.
     const before = new Set(this.children.list);
 
-    const heroes = heroesByRole(role);
+    const heroes = heroesByRole(role, this.roster);
     // The panel hugs its rows, so a 6-hero roster doesn't leave half the boss zone blank.
     const rows = Math.ceil(heroes.length / GRID.cols);
     const height = GRID.headerH + rows * (GRID.cardH + GRID.gapY) + GRID.gapY;
