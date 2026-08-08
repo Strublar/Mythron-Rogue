@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { HeroDef, HeroProgress } from '../types';
 import { tagStrip } from '../data/heroes';
 import { MAX_HERO_LEVEL, expToNext } from '../data/progression';
-import { UNIT_DEFS } from './UnitAnimator';
+import { createUnitPortrait } from './UnitAnimator';
 import { BOON_CREAM, BOON_GOLD, BOON_MUTED } from './BoonCard';
 import { heroLevel } from './HeroTooltip';
 import { ROLE_COLOR } from './layout';
@@ -54,11 +54,9 @@ export function createHeroCard(
     .setDepth(depth)
     .setInteractive({ useHandCursor: true });
 
-  const def = UNIT_DEFS[hero.unitKey];
-  const portrait = scene.add
-    .sprite(x, y - 32, def.atlasKey, `${def.framePrefix}_idle_000`)
-    .setDepth(depth + 1);
-  portrait.setScale(Math.min(PORTRAIT_SCALE, PORTRAIT_MAX_H / portrait.height));
+  const portrait = createUnitPortrait(
+    scene, hero.unitKey, x, y - 32, PORTRAIT_SCALE, PORTRAIT_MAX_H,
+  ).setDepth(depth + 1);
 
   // The exp bar takes the bottom row, so the text block lifts to make room for it.
   const lift = opts.progress ? EXP_ROW_H : 0;

@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
 import { createUnitSprite, playUnitAnim } from '../UnitAnimator';
+import { gold } from '../../engine/ProgressionStore';
 
 export class MainMenuScene extends Phaser.Scene {
   constructor() {
@@ -39,12 +40,14 @@ export class MainMenuScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     this.buildStartButton(width / 2, height * 0.8);
-    this.buildCollectionButton(width / 2, height * 0.89);
+    // Both between-run pages hang off the menu — neither needs a run to exist.
+    this.buildMenuLink(width * 0.3, height * 0.89, 'COLLECTION', 'CollectionScene');
+    this.buildMenuLink(width * 0.7, height * 0.89, `SHOP · ${gold()}G`, 'ShopScene');
   }
 
-  /** Between-runs hero levels live on their own page — no run state needed to read them. */
-  private buildCollectionButton(x: number, y: number): void {
-    const label = this.add.text(x, y, 'COLLECTION', {
+  /** A plain text link down to one of the between-run pages. */
+  private buildMenuLink(x: number, y: number, text: string, sceneKey: string): void {
+    const label = this.add.text(x, y, text, {
       fontSize: '22px',
       fontFamily: 'Georgia, serif',
       color: '#c0a060',
@@ -54,7 +57,7 @@ export class MainMenuScene extends Phaser.Scene {
 
     label.on('pointerover', () => label.setColor('#ffe080'));
     label.on('pointerout', () => label.setColor('#c0a060'));
-    label.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.scene.start('CollectionScene'));
+    label.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.scene.start(sceneKey));
   }
 
   /** Scale an image to cover the portrait canvas without distorting it. */

@@ -116,6 +116,24 @@ export function playUnitAnim(
   }
 }
 
+/**
+ * A still idle portrait, scaled to fit a box. Atlas canvases run 80–110px tall, so the
+ * cap is what keeps the tall ones inside their card — grids and the shop share it.
+ */
+export function createUnitPortrait(
+  scene: Phaser.Scene,
+  unitKey: string,
+  x: number,
+  y: number,
+  scale: number,
+  maxHeight: number,
+): Phaser.GameObjects.Sprite {
+  const def = UNIT_DEFS[unitKey];
+  const portrait = scene.add.sprite(x, y, def.atlasKey, `${def.framePrefix}_idle_000`);
+  portrait.setScale(Math.min(scale, maxHeight / portrait.height));
+  return portrait;
+}
+
 /** Create a unit sprite and immediately play its idle animation. */
 export function createUnitSprite(
   scene: Phaser.Scene,

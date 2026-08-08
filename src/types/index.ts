@@ -54,12 +54,16 @@ export interface Ability {
   buff?: AbilityBuff;
 }
 
+/** Collection tier. Sets how often an orb rolls the hero, nothing else. */
+export type HeroRarity = 'B' | 'A' | 'S';
+
 export interface HeroDef {
   id: string;
   unitKey: string;      // key into UNIT_DEFS
   name: string;
   role: HeroRole;
   tags: HeroTag[];      // faction + archetype — what tag boons key off
+  rarity: HeroRarity;   // orb pull weight and card tint — never touches stats
   maxHp: number;
   attack: number;       // auto-attack damage — heal amount for healers
   attackIntervalMs: number;
@@ -77,6 +81,24 @@ export interface HeroDef {
 export interface HeroProgress {
   level: number;
   exp: number;          // toward the next level
+}
+
+/** Everything that survives a run: per-hero levels, the heroes owned, and the purse. */
+export interface AccountState {
+  heroes: Record<string, HeroProgress>;
+  owned: string[];
+  gold: number;
+}
+
+/** The result of one orb, for the shop's reveal panel. */
+export interface OrbPull {
+  hero: HeroDef;
+  rarity: HeroRarity;
+  /** Already owned — the pull paid `exp` to that hero instead of unlocking it. */
+  duplicate: boolean;
+  exp: number;
+  /** The duplicated hero's progress after the exp landed. Absent on a new hero. */
+  progress?: HeroProgress;
 }
 
 /**

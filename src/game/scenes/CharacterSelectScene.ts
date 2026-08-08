@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { TAG_LABEL, defaultParty, heroesByRole, partyTags } from '../../data/heroes';
-import { leveledRoster } from '../../engine/ProgressionStore';
+import { ownedRoster } from '../../engine/ProgressionStore';
 import type { HeroDef, HeroRole } from '../../types';
 import { createUnitSprite } from '../UnitAnimator';
 import { createHeroCard } from '../HeroCard';
@@ -50,7 +50,8 @@ export class CharacterSelectScene extends Phaser.Scene {
   create(): void {
     // Levels earned in past runs are baked in here, once — everything downstream
     // (boons, the engine, the stats card) reads these defs.
-    this.roster = leveledRoster();
+    // Owned heroes only: the seven starters are always owned, so the default party holds.
+    this.roster = ownedRoster();
     const seed = defaultParty(this.roster);
     this.party = {
       tank: seed.filter(h => h.role === 'tank'),
