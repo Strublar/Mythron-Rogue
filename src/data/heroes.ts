@@ -89,15 +89,19 @@ export function partyTags(party: HeroDef[]): { tag: HeroTag; count: number }[] {
     .sort((a, b) => b.count - a.count);
 }
 
-export function heroesByRole(role: HeroRole): HeroDef[] {
-  return ROSTER.filter(h => h.role === role);
+/** `roster` defaults to the raw entries; screens pass the progression-leveled roster. */
+export function heroesByRole(role: HeroRole, roster: HeroDef[] = ROSTER): HeroDef[] {
+  return roster.filter(h => h.role === role);
 }
 
-const byId = (id: string): HeroDef => ROSTER.find(h => h.id === id)!;
-
 /** The 2/3/2 the selection screen opens on, so a run can start without picking. */
-export const DEFAULT_PARTY: HeroDef[] = [
+export const DEFAULT_PARTY_IDS = [
   'tank_ironcliffe', 'tank_silvermane',
   'dps_lancer', 'dps_araki', 'dps_pyromancer',
   'heal_mystic', 'heal_sunriser',
-].map(byId);
+];
+
+/** Those seven picks, taken from whichever roster is passed in (leveled, usually). */
+export function defaultParty(roster: HeroDef[] = ROSTER): HeroDef[] {
+  return DEFAULT_PARTY_IDS.map(id => roster.find(h => h.id === id)!);
+}

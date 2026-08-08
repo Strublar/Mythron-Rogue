@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { Ability, AbilityBuff, HeroDef, HeroRole } from '../types';
 import { tagStrip } from '../data/heroes';
+import { PASSIVE_LEVEL, passiveOf } from '../data/progression';
 import { GAME_HEIGHT, GAME_WIDTH, ROLE_COLOR } from './layout';
 
 const PANEL_W = 420;
@@ -16,8 +17,12 @@ const ROLE_LABEL: Record<HeroRole, string> = { tank: 'TANK', dps: 'DPS', heal: '
 const CREAM = '#f3e6c8';
 const MUTED = '#9aa3b8';
 const GOLD = '#ffd76b';
+/** Dimmed gold: a passive the hero has not reached the level for yet. */
+const LOCKED = '#6b6552';
 
 const secs = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
+/** Roster entries carry no level — they read as 1 until progression is folded in. */
+export const heroLevel = (hero: HeroDef): number => hero.level ?? 1;
 const hex = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
 
 const BUFF_TARGET_LABEL: Record<AbilityBuff['target'], string> = {
@@ -84,6 +89,8 @@ export class HeroTooltip {
     const perSec = hero.attack / (hero.attackIntervalMs / 1000);
 
     let y = PAD;
+    // Level sits on the name line: it is what every number under it was grown by.
+    this.right(`LVL ${heroLevel(hero)}`, 20, GOLD, y + 6);
     y = this.line(hero.name.toUpperCase(), 26, accent, y, 'bold');
     y = this.line(ROLE_LABEL[hero.role], 16, MUTED, y);
     y = this.line(tagStrip(hero), 15, GOLD, y) + GAP;
@@ -94,6 +101,8 @@ export class HeroTooltip {
     y = this.stat('EVERY', secs(hero.attackIntervalMs), y);
     y = this.stat(isHealer ? 'HPS' : 'DPS', perSec.toFixed(1), y) + GAP;
     y = this.rule(y);
+
+    y = this.passiveBlock(hero, y);
 
     const { ability } = hero;
     this.right(`${secs(ability.cooldownMs)} CD`, 16, MUTED, y + 6);
@@ -124,6 +133,21 @@ export class HeroTooltip {
 
   hide(): void {
     this.root.setVisible(false);
+  }
+
+  /**
+   * The passive, unlocked or not. A locked one still shows its name and what it will do —
+   * knowing what level 5 buys is the reason to level a hero at all.
+   */
+  private passiveBlock(hero: HeroDef, y: number): number {
+    const passive = hero.passive ?? passiveOf(hero.id);
+    if (!passive) return y;
+    const unlocked = !!hero.passive;
+
+    this.right(unlocked ? 'PASSIVE' : `LVL ${PASSIVE_LEVEL}`, 16, unlocked ? MUTED : LOCKED, y + 6);
+    let next = this.line(passive.name.toUpperCase(), 22, unlocked ? GOLD : LOCKED, y, 'bold');
+    next = this.line(passive.text, 18, unlocked ? CREAM : LOCKED, next) + GAP;
+    return this.rule(next);
   }
 
   /** Little arrow on the panel edge marking which hero the card belongs to. */

@@ -64,6 +64,31 @@ export interface HeroDef {
   attack: number;       // auto-attack damage — heal amount for healers
   attackIntervalMs: number;
   ability: Ability;
+  /** Progression level, 1…MAX_HERO_LEVEL. Absent on the raw roster entries. */
+  level?: number;
+  /** Set by `applyProgress` once the hero reaches PASSIVE_LEVEL. */
+  passive?: HeroPassive;
+}
+
+/**
+ * A hero's account-wide progression: levels earned across runs. Persisted, never
+ * part of a run — `applyProgress` folds it into the `HeroDef` the run starts from.
+ */
+export interface HeroProgress {
+  level: number;
+  exp: number;          // toward the next level
+}
+
+/**
+ * The one thing a hero unlocks at PASSIVE_LEVEL. Always on, no cooldown bar, no cast —
+ * it rides the same trigger machinery as boons, but owned by a single hero.
+ */
+export interface HeroPassive {
+  id: string;
+  name: string;
+  /** Player-facing copy — passives are hand-written, unlike generated ability text. */
+  text: string;
+  trigger: BoonTriggerSpec;
 }
 
 /** A running buff on a hero. Percentages sum across stacks, like boons. */

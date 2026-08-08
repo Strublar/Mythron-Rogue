@@ -1,7 +1,7 @@
 import type {
   BoonAction, BoonDef, BoonEffect, BoonScope, BoonTargetKind, BoonTrigger, HeroDef, HeroTag,
 } from '../types';
-import { grow, haste } from './statMath';
+import { growHero } from './statMath';
 
 export const SCOPE_LABEL: Record<BoonScope, string> = {
   tank: 'Tanks',
@@ -371,25 +371,12 @@ export function applyBoons(party: HeroDef[], boons: BoonDef[]): HeroDef[] {
         (total, b) => (boonAffects(b, def) ? total + effectPct(b, key, members.get(b.id) ?? 0) : total),
         0,
       );
-    const power = pct('abilityPowerPct');
-    const a = def.ability;
-    return {
-      ...def,
-      maxHp: grow(def.maxHp, pct('maxHpPct')),
-      attack: grow(def.attack, pct('attackPct')),
-      attackIntervalMs: haste(def.attackIntervalMs, pct('attackSpeedPct')),
-      ability: {
-        ...a,
-        cooldownMs: haste(a.cooldownMs, pct('cooldownPct')),
-        damage: grow(a.damage, power),
-        heal: grow(a.heal, power),
-        selfShield: grow(a.selfShield, power),
-        allyShield: grow(a.allyShield, power),
-        partyHeal: grow(a.partyHeal, power),
-        selfHeal: grow(a.selfHeal, power),
-        executeBonus: grow(a.executeBonus, power),
-        dot: a.dot && { ...a.dot, damage: grow(a.dot.damage, power) },
-      },
-    };
+    return growHero(def, {
+      maxHpPct: pct('maxHpPct'),
+      attackPct: pct('attackPct'),
+      attackSpeedPct: pct('attackSpeedPct'),
+      abilityPowerPct: pct('abilityPowerPct'),
+      cooldownPct: pct('cooldownPct'),
+    });
   });
 }

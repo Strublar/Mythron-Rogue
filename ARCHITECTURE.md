@@ -24,13 +24,16 @@
     ├── types/
     │   └── index.ts                    # ALL shared types/interfaces (source of truth)
     ├── data/
-    │   ├── heroes.ts                   # ROSTER (20 heroes) + heroesByRole + DEFAULT_PARTY + threat tuning
+    │   ├── heroes.ts                   # ROSTER (20 heroes) + heroesByRole + defaultParty + threat tuning
     │   ├── abilities.ts                # One Ability per hero — the roster's identity
-    │   ├── statMath.ts                 # grow()/haste() percent math, shared by boons and buffs
+    │   ├── statMath.ts                 # grow()/haste()/growHero() percent math (boons, buffs, levels)
     │   ├── boons.ts                    # Boon pool, roll, effect text, applyBoons(party, boons)
+    │   ├── progression.ts              # Levels 1–10: per-level growth, exp curve, applyProgress
+    │   ├── passives.ts                 # PASSIVES — one per hero, unlocked at level 5
     │   └── bosses.ts                   # Boss definitions
     ├── engine/
     │   ├── FightEngine.ts              # Real-time fight sim: cooldowns, auto-acts, casts
+    │   ├── ProgressionStore.ts         # localStorage hero levels: leveledRoster(), grantRunExp()
     │   └── RunState.ts                 # Run-long boons + the roster they derive
     └── game/
         ├── PhaserGame.ts               # Phaser.Game config (720×1280 portrait, FIT)
@@ -40,15 +43,16 @@
         ├── CombatantView.ts            # Sprite + health bar + cooldown bar + ready ring + threat bar/aggro mark
         ├── ui.ts                       # Shared btn_confirm button factory
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
-        ├── HeroTooltip.ts              # Long-press stats card: hero stats + ability text/values
+        ├── HeroTooltip.ts              # Long-press stats card: level, stats, passive, ability values
         ├── HeroInspector.ts            # Shared long-press-to-inspect: timer, drag guard, slot probes
         ├── BoonCard.ts                 # Selectable boon offer card + shared boon palette
-        ├── HeroCard.ts                 # Roster grid card: portrait, name, stat strip, tap/hold
+        ├── HeroCard.ts                 # Roster grid card: portrait, name, stat strip, level/exp, tap/hold
         ├── BoonListPanel.ts            # "BOONS" overlay: every boon owned this run, stacked
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
         └── scenes/
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
-            ├── MainMenuScene.ts        # Title + FIGHT BOSS button
+            ├── MainMenuScene.ts        # Title + FIGHT BOSS + COLLECTION buttons
+            ├── CollectionScene.ts      # Between-runs hero levels/exp per role tab
             ├── CharacterSelectScene.ts # Pre-run party builder on the battlefield slots
             ├── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
             └── InterludeScene.ts       # Between-fights boon draft in the boss zone (+ hero long-press probes)
@@ -111,6 +115,17 @@ main.ts
   free. Trigger payloads never wake other triggers (`firing` guard, one level deep). Owning a
   boon twice fires it twice — no percentage stacking. `setBoons` hands the engine the run's
   boons; per-fight counters reset in `startNextBoss`.
+- **Progression.** Every hero carries an account-wide level (1–10) persisted in
+  `localStorage` by `ProgressionStore`. `leveledRoster()` folds it in once, on the character
+  select screen: `applyProgress` grows the base stats by `LEVEL_GROWTH × (level-1)` and, from
+  `PASSIVE_LEVEL` (5), attaches the hero's `PASSIVES` entry. Boons then apply *on top* of the
+  leveled def. A finished run pays `runExp(level)` to every hero fielded (`grantRunExp`, called
+  from the run-over overlay), so exp scales with how deep the run got. `CollectionScene` is the
+  between-runs page: one role tab at a time, level badge, exp bar, hold for the full card.
+- **Passives** ride the boon trigger machinery, owner-scoped: a `TriggerSlot` with `ownerId`
+  only wakes on its owner's events, `'scope'` targets resolve to that hero alone, and a dead
+  owner's passive lies dormant. `HeroTooltip` shows a locked passive greyed with its unlock
+  level, so leveling has a visible goal.
 - **Boons.** `RunState` holds every boon picked this run; `applyBoons` re-derives the whole
   roster from the chosen party (never mutating it) and `FightEngine.startNextBoss` swaps the
   new defs in. Percentages are additive across stacks; speed/cooldown bonuses are haste

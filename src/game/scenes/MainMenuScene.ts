@@ -38,7 +38,23 @@ export class MainMenuScene extends Phaser.Scene {
       strokeThickness: 3,
     }).setOrigin(0.5);
 
-    this.buildStartButton(width / 2, height * 0.85);
+    this.buildStartButton(width / 2, height * 0.8);
+    this.buildCollectionButton(width / 2, height * 0.89);
+  }
+
+  /** Between-runs hero levels live on their own page — no run state needed to read them. */
+  private buildCollectionButton(x: number, y: number): void {
+    const label = this.add.text(x, y, 'COLLECTION', {
+      fontSize: '22px',
+      fontFamily: 'Georgia, serif',
+      color: '#c0a060',
+      stroke: '#1a0a00',
+      strokeThickness: 4,
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    label.on('pointerover', () => label.setColor('#ffe080'));
+    label.on('pointerout', () => label.setColor('#c0a060'));
+    label.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.scene.start('CollectionScene'));
   }
 
   /** Scale an image to cover the portrait canvas without distorting it. */
