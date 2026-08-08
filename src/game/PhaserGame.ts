@@ -3,6 +3,7 @@ import { BootScene } from './scenes/BootScene';
 import { MainMenuScene } from './scenes/MainMenuScene';
 import { CharacterSelectScene } from './scenes/CharacterSelectScene';
 import { CollectionScene } from './scenes/CollectionScene';
+import { ShopScene } from './scenes/ShopScene';
 import { BossFightScene } from './scenes/BossFightScene';
 import { InterludeScene } from './scenes/InterludeScene';
 import { GAME_HEIGHT, GAME_WIDTH } from './layout';
@@ -19,7 +20,8 @@ export function createPhaserGame(): Phaser.Game {
       autoCenter: Phaser.Scale.CENTER_BOTH,
     },
     scene: [
-      BootScene, MainMenuScene, CollectionScene, CharacterSelectScene, BossFightScene, InterludeScene,
+      BootScene, MainMenuScene, CollectionScene, ShopScene, CharacterSelectScene, BossFightScene,
+      InterludeScene,
     ],
   });
 }

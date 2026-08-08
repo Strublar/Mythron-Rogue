@@ -1,21 +1,22 @@
 import Phaser from 'phaser';
 import { heroesByRole } from '../../data/heroes';
 import { MAX_HERO_LEVEL, PASSIVE_LEVEL } from '../../data/progression';
-import { heroProgress, leveledRoster } from '../../engine/ProgressionStore';
+import { ROSTER } from '../../data/heroes';
+import { heroProgress, ownedRoster } from '../../engine/ProgressionStore';
 import type { HeroDef, HeroRole } from '../../types';
 import { createHeroCard } from '../HeroCard';
 import { HeroInspector } from '../HeroInspector';
-import { createButton } from '../ui';
+import { createButton, drawSceneBackground, sceneLabel } from '../ui';
 import { GAME_HEIGHT, GAME_WIDTH, ROLE_COLOR } from '../layout';
 
 const ROLE_ORDER: HeroRole[] = ['tank', 'dps', 'heal'];
 const TAB_LABEL: Record<HeroRole, string> = { tank: 'TANKS', dps: 'DPS', heal: 'HEALERS' };
 
-const TABS_Y = 150;
+const TABS_Y = 178;
 const TAB_W = 200;
 const TAB_H = 52;
 /** Cards carry a level badge and an exp bar, so they run taller than the party grid's. */
-const GRID = { top: 200, cols: 3, cardW: 216, cardH: 176, gapX: 12, gapY: 14 };
+const GRID = { top: 228, cols: 3, cardW: 216, cardH: 176, gapX: 12, gapY: 14 };
 const BACK_BUTTON_Y = GAME_HEIGHT - 70;
 
 const hexColor = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
@@ -37,18 +38,22 @@ export class CollectionScene extends Phaser.Scene {
   }
 
   create(): void {
-    this.roster = leveledRoster();
+    // Owned heroes only — the rest are still sealed in orbs, and the count is the goal.
+    this.roster = ownedRoster();
     this.gridObjects = [];
     this.tabObjects = [];
 
-    this.drawBackground();
+    drawSceneBackground(this);
     this.label(GAME_WIDTH / 2, 46, 'COLLECTION', 38, '#ffd76b', 'bold');
     this.label(
-      GAME_WIDTH / 2, 88,
+      GAME_WIDTH / 2, 88, `${this.roster.length} / ${ROSTER.length} HEROES OWNED`, 20, '#ffd76b', 'bold',
+    );
+    this.label(
+      GAME_WIDTH / 2, 116,
       `Hold a hero for its stats · passive unlocks at level ${PASSIVE_LEVEL} · max ${MAX_HERO_LEVEL}`,
       16, '#9aa3b8',
     );
-    this.label(GAME_WIDTH / 2, 112, 'Heroes earn exp from every run they are fielded in', 16, '#9aa3b8');
+    this.label(GAME_WIDTH / 2, 138, 'Heroes earn exp from every run they are fielded in', 16, '#9aa3b8');
 
     this.inspector = new HeroInspector(this);
     this.drawTabs();
@@ -111,22 +116,9 @@ export class CollectionScene extends Phaser.Scene {
     this.gridObjects = this.children.list.filter(o => !before.has(o));
   }
 
-  private drawBackground(): void {
-    for (const key of ['combat_bg', 'combat_mid']) {
-      const img = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, key);
-      img.setScale(Math.max(GAME_WIDTH / img.width, GAME_HEIGHT / img.height));
-    }
-    this.add.graphics().fillStyle(0x05060f, 0.82).fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
-  }
-
   private label(
     x: number, y: number, text: string, size: number, color: string, style = '',
   ): Phaser.GameObjects.Text {
-    return this.add
-      .text(x, y, text, {
-        fontFamily: 'Lato', fontSize: `${size}px`, color, fontStyle: style,
-        stroke: '#000000', strokeThickness: 4,
-      })
-      .setOrigin(0.5);
+    return sceneLabel(this, x, y, text, size, color, style);
   }
 }

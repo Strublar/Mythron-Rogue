@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { bossForLevel } from '../../data/bosses';
 import { FightEngine } from '../../engine/FightEngine';
 import type { ExpGain } from '../../engine/ProgressionStore';
-import { grantRunExp } from '../../engine/ProgressionStore';
+import { grantRunExp, grantRunGold } from '../../engine/ProgressionStore';
 import { RunState } from '../../engine/RunState';
 import type { FightEvent, HeroDef } from '../../types';
 import { CombatantView } from '../CombatantView';
@@ -302,8 +302,9 @@ export class BossFightScene extends Phaser.Scene {
 
   private showRunOverOverlay(highestLevel: number): void {
     this.ended = true;
-    // The run is over: the party banks its exp before the screen even draws.
+    // The run is over: the party banks its exp and gold before the screen even draws.
     const gains = grantRunExp(this.party, highestLevel);
+    const earnedGold = grantRunGold(highestLevel);
     const depth = 200;
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setDepth(depth);
     this.add
@@ -325,7 +326,7 @@ export class BossFightScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(depth);
 
-    const reportBottom = this.drawExpReport(gains, GAME_HEIGHT / 2 + 60, depth);
+    const reportBottom = this.drawExpReport(gains, earnedGold, GAME_HEIGHT / 2 + 60, depth);
 
     // A new run means a new party — back to the selection screen, not a blind restart.
     createButton(
@@ -334,8 +335,11 @@ export class BossFightScene extends Phaser.Scene {
     );
   }
 
-  /** What the run paid the party: flat exp for everyone, then whoever leveled. Returns its bottom. */
-  private drawExpReport(gains: ExpGain[], y: number, depth: number): number {
+  /**
+   * What the run paid: flat exp for everyone, gold for the purse, then whoever leveled.
+   * Returns its bottom so the RETRY button can sit under it.
+   */
+  private drawExpReport(gains: ExpGain[], earnedGold: number, y: number, depth: number): number {
     const earned = gains[0]?.exp ?? 0;
     this.add
       .text(GAME_WIDTH / 2, y, `+${earned} EXP TO EACH HERO`, {
@@ -344,11 +348,19 @@ export class BossFightScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setDepth(depth);
 
+    // Gold is account-wide, not per hero — it buys orbs in the shop between runs.
+    this.add
+      .text(GAME_WIDTH / 2, y + 38, `+${earnedGold} GOLD`, {
+        fontFamily: 'Lato', fontSize: '26px', fontStyle: 'bold', color: '#ffd76b',
+      })
+      .setOrigin(0.5)
+      .setDepth(depth);
+
     const levelled = gains.filter(g => g.after.level > g.before.level);
-    if (levelled.length === 0) return y;
+    if (levelled.length === 0) return y + 38;
 
     this.add
-      .text(GAME_WIDTH / 2, y + 44, 'LEVEL UP', {
+      .text(GAME_WIDTH / 2, y + 82, 'LEVEL UP', {
         fontFamily: 'Lato', fontSize: '22px', fontStyle: 'bold', color: '#ffd76b',
       })
       .setOrigin(0.5)
@@ -357,12 +369,12 @@ export class BossFightScene extends Phaser.Scene {
     levelled.forEach((g, i) => {
       const unlock = g.unlockedPassive ? '  ·  PASSIVE UNLOCKED' : '';
       this.add
-        .text(GAME_WIDTH / 2, y + 76 + i * 26, `${g.name.toUpperCase()}  →  LVL ${g.after.level}${unlock}`, {
+        .text(GAME_WIDTH / 2, y + 114 + i * 26, `${g.name.toUpperCase()}  →  LVL ${g.after.level}${unlock}`, {
           fontFamily: 'Lato', fontSize: '18px', color: g.unlockedPassive ? '#ffd76b' : '#f3e6c8',
         })
         .setOrigin(0.5)
         .setDepth(depth);
     });
-    return y + 76 + (levelled.length - 1) * 26;
+    return y + 114 + (levelled.length - 1) * 26;
   }
 }

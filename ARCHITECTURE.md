@@ -30,10 +30,11 @@
     │   ├── boons.ts                    # Boon pool, roll, effect text, applyBoons(party, boons)
     │   ├── progression.ts              # Levels 1–10: per-level growth, exp curve, applyProgress
     │   ├── passives.ts                 # PASSIVES — one per hero, unlocked at level 5
+    │   ├── orbs.ts                     # Rarity tiers/odds, orb price, dupe exp, runGold, rollOrb
     │   └── bosses.ts                   # Boss definitions
     ├── engine/
     │   ├── FightEngine.ts              # Real-time fight sim: cooldowns, auto-acts, casts
-    │   ├── ProgressionStore.ts         # localStorage hero levels: leveledRoster(), grantRunExp()
+    │   ├── ProgressionStore.ts         # localStorage account: levels, owned heroes, gold, buyOrb()
     │   └── RunState.ts                 # Run-long boons + the roster they derive
     └── game/
         ├── PhaserGame.ts               # Phaser.Game config (720×1280 portrait, FIT)
@@ -41,7 +42,7 @@
         ├── orientation.ts              # Portrait lock (Screen Orientation API + fullscreen)
         ├── UnitAnimator.ts             # UNIT_DEFS registry + atlas anim registration
         ├── CombatantView.ts            # Sprite + health bar + cooldown bar + ready ring + threat bar/aggro mark
-        ├── ui.ts                       # Shared btn_confirm button factory
+        ├── ui.ts                       # Shared btn_confirm button factory + scene backdrop/label
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
         ├── HeroTooltip.ts              # Long-press stats card: level, stats, passive, ability values
         ├── HeroInspector.ts            # Shared long-press-to-inspect: timer, drag guard, slot probes
@@ -51,8 +52,9 @@
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
         └── scenes/
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
-            ├── MainMenuScene.ts        # Title + FIGHT BOSS + COLLECTION buttons
-            ├── CollectionScene.ts      # Between-runs hero levels/exp per role tab
+            ├── MainMenuScene.ts        # Title + FIGHT BOSS + COLLECTION/SHOP links
+            ├── CollectionScene.ts      # Between-runs hero levels/exp per role tab (owned only)
+            ├── ShopScene.ts            # Orb shop: gold, buy, rarity reveal, duplicate exp
             ├── CharacterSelectScene.ts # Pre-run party builder on the battlefield slots
             ├── BossFightScene.ts       # Layout, engine ↔ view wiring, end overlay
             └── InterludeScene.ts       # Between-fights boon draft in the boss zone (+ hero long-press probes)
@@ -122,6 +124,17 @@ main.ts
   leveled def. A finished run pays `runExp(level)` to every hero fielded (`grantRunExp`, called
   from the run-over overlay), so exp scales with how deep the run got. `CollectionScene` is the
   between-runs page: one role tab at a time, level badge, exp bar, hold for the full card.
+- **Collection.** Heroes are *owned*, not given. A fresh account owns exactly the seven
+  `DEFAULT_PARTY_IDS` — one legal 2/3/2 — and `ownedRoster()` is what both the select grid and
+  the collection page read, so an unowned hero is never drawn anywhere. Each `HeroDef` carries a
+  `rarity` (`B`/`A`/`S`, 10/7/3 heroes) which is pull weight and card tint only, never stats.
+  A finished run also pays `runGold(level)` — a flat base plus a triangular sum over the levels
+  cleared, so deep runs fund faster. `ShopScene` spends it: `buyOrb()` deducts `ORB_PRICE`, draws
+  a tier on `RARITY_WEIGHT` (70/25/5) then a hero uniformly inside it, and either unlocks that
+  hero or — if already owned — pays it `DUPE_EXP` through the same `addExp` levels use, so no
+  pull is dead and a complete collection keeps orbs worth buying. `ProgressionStore` remains the
+  only writer; its key is `mythron.progression.v2` (`AccountState`), migrating a v1 blob's levels
+  and seeding the starters.
 - **Passives** ride the boon trigger machinery, owner-scoped: a `TriggerSlot` with `ownerId`
   only wakes on its owner's events, `'scope'` targets resolve to that hero alone, and a dead
   owner's passive lies dormant. `HeroTooltip` shows a locked passive greyed with its unlock

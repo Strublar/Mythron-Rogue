@@ -1,4 +1,32 @@
 import Phaser from 'phaser';
+import { GAME_HEIGHT, GAME_WIDTH } from './layout';
+
+/** The dimmed battlefield backdrop every between-run screen sits on. */
+export function drawSceneBackground(scene: Phaser.Scene): void {
+  for (const key of ['combat_bg', 'combat_mid']) {
+    const img = scene.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, key);
+    img.setScale(Math.max(GAME_WIDTH / img.width, GAME_HEIGHT / img.height));
+  }
+  scene.add.graphics().fillStyle(0x05060f, 0.82).fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+}
+
+/** Centred stroked caption — the shared text style of the between-run screens. */
+export function sceneLabel(
+  scene: Phaser.Scene,
+  x: number,
+  y: number,
+  text: string,
+  size: number,
+  color: string,
+  style = '',
+): Phaser.GameObjects.Text {
+  return scene.add
+    .text(x, y, text, {
+      fontFamily: 'Lato', fontSize: `${size}px`, color, fontStyle: style,
+      stroke: '#000000', strokeThickness: 4,
+    })
+    .setOrigin(0.5);
+}
 
 export interface ButtonHandle {
   /** Disabled buttons dim and stop taking presses — used for "pick a boon first". */

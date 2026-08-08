@@ -1,13 +1,19 @@
-import { ROSTER } from '../data/heroes';
+import { DEFAULT_PARTY_IDS, ROSTER } from '../data/heroes';
+import { DUPE_EXP, ORB_PRICE, rollOrb, runGold } from '../data/orbs';
 import { PASSIVE_LEVEL, STARTING_PROGRESS, addExp, applyProgress, runExp } from '../data/progression';
-import type { HeroDef, HeroProgress } from '../types';
+import type { AccountState, HeroDef, HeroProgress, OrbPull } from '../types';
 
-const STORAGE_KEY = 'mythron.progression.v1';
+const STORAGE_KEY = 'mythron.progression.v2';
+/** Pre-collection saves: the whole blob was the progress table, with no owned list. */
+const LEGACY_KEY = 'mythron.progression.v1';
 
 type ProgressTable = Record<string, HeroProgress>;
 
 /** Read once, then kept in memory — the store is the only writer. */
-let table: ProgressTable | undefined;
+let account: AccountState | undefined;
+
+const isProgress = (p: HeroProgress): boolean =>
+  typeof p?.level === 'number' && typeof p?.exp === 'number';
 
 /** What a run earned for one hero, for the run-over screen. */
 export interface ExpGain {
@@ -20,19 +26,40 @@ export interface ExpGain {
   unlockedPassive: boolean;
 }
 
-function load(): ProgressTable {
-  if (table) return table;
-  table = {};
+function load(): AccountState {
+  if (account) return account;
+  // A fresh account owns the seven default picks — exactly one legal party.
+  account = { heroes: {}, owned: [...DEFAULT_PARTY_IDS], gold: 0 };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    const parsed = raw ? (JSON.parse(raw) as ProgressTable) : {};
-    for (const [id, p] of Object.entries(parsed)) {
-      if (typeof p?.level === 'number' && typeof p?.exp === 'number') table[id] = p;
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<AccountState>;
+      readHeroes(parsed.heroes);
+      if (Array.isArray(parsed.owned)) {
+        // Starters stay owned whatever the save says — the party must remain fieldable.
+        for (const id of parsed.owned) if (typeof id === 'string') grant(id);
+      }
+      if (typeof parsed.gold === 'number' && parsed.gold >= 0) account.gold = parsed.gold;
+    } else {
+      // No v2 save: carry the levels a pre-collection save had earned.
+      const legacy = window.localStorage.getItem(LEGACY_KEY);
+      if (legacy) readHeroes(JSON.parse(legacy) as ProgressTable);
     }
   } catch {
     // Private browsing or corrupt data: progression simply starts over.
   }
-  return table;
+  return account;
+}
+
+function readHeroes(table: ProgressTable | undefined): void {
+  for (const [id, p] of Object.entries(table ?? {})) {
+    if (isProgress(p)) account!.heroes[id] = p;
+  }
+}
+
+/** Adds an id to the owned list, ignoring one already there. */
+function grant(heroId: string): void {
+  if (!account!.owned.includes(heroId)) account!.owned.push(heroId);
 }
 
 function save(): void {
@@ -44,12 +71,30 @@ function save(): void {
 }
 
 export function heroProgress(heroId: string): HeroProgress {
-  return load()[heroId] ?? STARTING_PROGRESS;
+  return load().heroes[heroId] ?? STARTING_PROGRESS;
 }
 
 /** Every roster hero at its earned level, passives included — what the game plays with. */
 export function leveledRoster(): HeroDef[] {
   return ROSTER.map(def => applyProgress(def, heroProgress(def.id)));
+}
+
+/** Only the heroes the account has unlocked. The screens never show anything else. */
+export function ownedRoster(): HeroDef[] {
+  const { owned } = load();
+  return leveledRoster().filter(def => owned.includes(def.id));
+}
+
+export function isOwned(heroId: string): boolean {
+  return load().owned.includes(heroId);
+}
+
+export function ownedCount(): number {
+  return load().owned.length;
+}
+
+export function gold(): number {
+  return load().gold;
 }
 
 /**
@@ -64,7 +109,7 @@ export function grantRunExp(party: HeroDef[], runLevel: number): ExpGain[] {
   for (const id of new Set(party.map(h => h.id))) {
     const before = heroProgress(id);
     const after = addExp(before, exp);
-    store[id] = after;
+    store.heroes[id] = after;
     gains.push({
       heroId: id,
       name: ROSTER.find(h => h.id === id)?.name ?? id,
@@ -80,4 +125,37 @@ export function grantRunExp(party: HeroDef[], runLevel: number): ExpGain[] {
 
 function crossedPassive(before: HeroProgress, after: HeroProgress): boolean {
   return before.level < PASSIVE_LEVEL && after.level >= PASSIVE_LEVEL;
+}
+
+/** Banks the run's gold alongside its exp. Returns what it paid, for the run-over screen. */
+export function grantRunGold(runLevel: number): number {
+  const earned = runGold(runLevel);
+  load().gold += earned;
+  save();
+  return earned;
+}
+
+/**
+ * Spends one orb. Returns `undefined` when the purse is short — the shop gates the button
+ * on `gold()`, so that is a guard, not a flow. A hero already owned pays `DUPE_EXP` to
+ * itself instead of unlocking, which is why no pull is ever dead.
+ */
+export function buyOrb(): OrbPull | undefined {
+  const store = load();
+  if (store.gold < ORB_PRICE) return undefined;
+  store.gold -= ORB_PRICE;
+
+  const hero = rollOrb();
+  const duplicate = isOwned(hero.id);
+  if (!duplicate) {
+    grant(hero.id);
+    save();
+    return { hero, rarity: hero.rarity, duplicate: false, exp: 0 };
+  }
+
+  const exp = DUPE_EXP[hero.rarity];
+  const progress = addExp(heroProgress(hero.id), exp);
+  store.heroes[hero.id] = progress;
+  save();
+  return { hero, rarity: hero.rarity, duplicate: true, exp, progress };
 }
