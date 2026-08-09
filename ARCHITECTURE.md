@@ -18,7 +18,10 @@
 ├── scripts/
 │   ├── plist-to-atlas.mjs              # Cocos2d .plist → Phaser JSON atlas
 │   ├── batch-plist-to-atlas.mjs        # npm run plist-to-atlas
-│   └── extract-sprites.mjs             # npm run extract-sprites
+│   ├── extract-sprites.mjs             # npm run extract-sprites
+│   └── generate-unit-catalog.mjs       # npm run unit-catalog → docs/units/
+├── docs/
+│   └── units/                          # Generated sprite catalog, one .md per faction + thumbs/
 └── src/
     ├── main.ts                         # Entry: boots Phaser, preloads Lato, registers sw
     ├── types/
