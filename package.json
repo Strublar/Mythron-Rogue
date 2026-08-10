@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "extract-sprites": "node scripts/extract-sprites.mjs",
     "plist-to-atlas": "node scripts/batch-plist-to-atlas.mjs",
-    "unit-catalog": "node scripts/generate-unit-catalog.mjs"
+    "unit-catalog": "node scripts/generate-unit-catalog.mjs",
+    "spell-catalog": "node scripts/generate-spell-catalog.mjs"
   },
   "dependencies": {
     "phaser": "^3.80.1"
