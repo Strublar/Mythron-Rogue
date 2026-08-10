@@ -6,6 +6,7 @@ import { createUnitPortrait } from './UnitAnimator';
 import { BOON_CREAM, BOON_GOLD, BOON_MUTED } from './BoonCard';
 import { heroLevel } from './HeroTooltip';
 import { ROLE_COLOR } from './layout';
+import { PRISMATIC_WHITE, prismaticSwirl } from './PrismaticFx';
 
 const PAD = 8;
 const EXP_BAR_H = 6;
@@ -25,6 +26,8 @@ export interface HeroCardOpts {
   current: boolean;
   /** Collection page: draws the exp bar under the stats and the passive marker. */
   progress?: HeroProgress;
+  /** The account owns this hero's foil variant — the card takes the prismatic treatment. */
+  prismatic?: boolean;
   /** Pointer down: arm the scene's long-press inspect. */
   onPressStart: (hero: HeroDef, x: number, y: number) => void;
   /** The gesture left the card without releasing on it. */
@@ -48,11 +51,19 @@ export function createHeroCard(
   depth = 0,
 ): void {
   const accent = ROLE_COLOR[hero.role];
+  // Prismatic reframes the card in white; the role accent still wins on the current pick.
+  const frame = opts.current ? accent : (opts.prismatic ? 0xffffff : 0xffd76b);
+  const frameAlpha = opts.current ? 1 : (opts.prismatic ? 0.85 : 0.45);
   const bg = scene.add
     .rectangle(x, y, w, h, IDLE, 0.95)
-    .setStrokeStyle(2, opts.current ? accent : 0xffd76b, opts.current ? 1 : 0.45)
+    .setStrokeStyle(2, frame, frameAlpha)
     .setDepth(depth)
     .setInteractive({ useHandCursor: true });
+
+  // Sits between the panel and the portrait, inset so the frame stays crisp over it.
+  const swirl = opts.prismatic
+    ? prismaticSwirl(scene, x, y, w - 4, h - 4, depth + 0.5)
+    : undefined;
 
   const portrait = createUnitPortrait(
     scene, hero.unitKey, x, y - 32, PORTRAIT_SCALE, PORTRAIT_MAX_H,
@@ -97,10 +108,20 @@ export function createHeroCard(
       .setOrigin(1, 0)
       .setDepth(depth + 2);
   }
+  // The foil marker shares the corner with the passive star, so it steps aside for it.
+  if (opts.prismatic) {
+    scene.add
+      .text(x + w / 2 - PAD - (hero.passive ? 18 : 0), y - h / 2 + PAD, '◆', {
+        fontFamily: 'Lato', fontSize: '18px', color: PRISMATIC_WHITE,
+      })
+      .setOrigin(1, 0)
+      .setDepth(depth + 2);
+  }
 
   if (opts.taken) {
     // Fielded elsewhere: still inspectable, but tapping it would duplicate the hero.
     for (const o of [portrait, label]) o.setAlpha(0.35);
+    swirl?.setAlpha(0.35);
     bg.setFillStyle(0x0b0d18, 0.95);
     scene.add
       .text(x, y - h / 2 + PAD, 'IN PARTY', {

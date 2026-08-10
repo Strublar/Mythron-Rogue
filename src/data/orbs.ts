@@ -18,6 +18,12 @@ export const RARITY_COLOR: Record<HeroRarity, number> = {
 /** Exp a duplicate pays the hero it rolled, so no pull is ever wasted. */
 export const DUPE_EXP: Record<HeroRarity, number> = { B: 20, A: 50, S: 120 };
 
+/** Odds any pull comes out prismatic, rolled independently of the rarity tier. */
+export const PRISMATIC_CHANCE = 0.1;
+
+/** A prismatic duplicate is still a win — it pays this multiple of the normal dupe exp. */
+export const PRISMATIC_EXP_MULT = 2;
+
 /** Ascending, so the reveal and the odds list read in the same order everywhere. */
 export const RARITY_ORDER: HeroRarity[] = ['B', 'A', 'S'];
 
@@ -57,4 +63,12 @@ export function rollOrb(rng: () => number = Math.random): HeroDef {
   // Unreachable while every tier has members — rounding only, never a real branch.
   const pool = heroesByRarity('B');
   return pool[pool.length - 1];
+}
+
+/**
+ * The prismatic coin, drawn independently of `rollOrb` so the rarity odds stay untouched.
+ * Any hero can come out prismatic — the variant is cosmetic, not a fourth tier.
+ */
+export function rollPrismatic(rng: () => number = Math.random): boolean {
+  return rng() < PRISMATIC_CHANCE;
 }

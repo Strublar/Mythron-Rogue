@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import { heroesByRole } from '../../data/heroes';
 import { MAX_HERO_LEVEL, PASSIVE_LEVEL } from '../../data/progression';
 import { ROSTER } from '../../data/heroes';
-import { heroProgress, ownedRoster } from '../../engine/ProgressionStore';
+import { heroProgress, isPrismatic, ownedRoster } from '../../engine/ProgressionStore';
 import type { HeroDef, HeroRole } from '../../types';
 import { createHeroCard } from '../HeroCard';
 import { HeroInspector } from '../HeroInspector';
@@ -106,6 +106,7 @@ export class CollectionScene extends Phaser.Scene {
         taken: false,
         current: false,
         progress: heroProgress(hero.id),
+        prismatic: isPrismatic(hero.id),
         onPressStart: (h, hx, hy) => this.inspector.press(h, hx, hy),
         onPressCancel: () => this.inspector.cancel(),
         // Tapping a card only inspects here — nothing to pick outside a run.

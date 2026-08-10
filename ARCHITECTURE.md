@@ -56,6 +56,8 @@
         ├── BoonCard.ts                 # Selectable boon offer card + shared boon palette
         ├── HeroCard.ts                 # Roster grid card: portrait, name, stat strip, level/exp, tap/hold
         ├── BoonListPanel.ts            # "BOONS" overlay: every boon owned this run, stacked
+        ├── PrismaticFx.ts              # Foil treatment: texture map + orbiting gradients + shine sweep
+        ├── PrismaticBurst.ts           # Prismatic reveal flourish: gradient floor, rays, sparks
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
         └── scenes/
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
@@ -142,6 +144,16 @@ main.ts
   pull is dead and a complete collection keeps orbs worth buying. `ProgressionStore` remains the
   only writer; its key is `mythron.progression.v2` (`AccountState`), migrating a v1 blob's levels
   and seeding the starters.
+- **Prismatics.** Duelyst's foil variant, ported from its CC0 art in
+  `public/resources/prismatic/`. An orb draws `rollPrismatic()` (10%) on top of the hero it
+  rolled; a prismatic pull unlocks the variant even for a hero already owned, so `OrbPull.duplicate`
+  means "nothing new", not "hero already owned", and a prismatic duplicate pays `PRISMATIC_EXP_MULT ×
+  DUPE_EXP`. `AccountState.prismatic` is the owned list — additive to the `v2` blob, so an older save
+  simply reads `[]`. Purely cosmetic: it never touches stats, odds, or which heroes are fieldable.
+  `prismaticSwirl` (three additive gradients orbiting on 10/15/20s periods plus a shine band, clipped
+  by a geometry mask) is the reusable layer behind both a `HeroCard` and the shop panel;
+  `prismaticBurst` is the one-shot reveal flourish. Both destroy their own tweens and mask on
+  `DESTROY` — the grids rebuild constantly and only ever destroy display objects.
 - **Passives** ride the boon trigger machinery, owner-scoped: a `TriggerSlot` with `ownerId`
   only wakes on its owner's events, `'scope'` targets resolve to that hero alone, and a dead
   owner's passive lies dormant. `HeroTooltip` shows a locked passive greyed with its unlock
