@@ -1,9 +1,8 @@
 import Phaser from 'phaser';
-import { boonAffects } from '../data/boons';
 import { ROLE_THREAT_MULTIPLIER, TAUNT_THREAT } from '../data/heroes';
 import { haste } from '../data/statMath';
 import type {
-  Ability, BoonAction, BoonDef, BoonTargetKind, BoonTrigger, BoonTriggerSpec, BossDef, BossState,
+  Ability, BoonAction, BoonTargetKind, BoonTrigger, BoonTriggerSpec, BossDef, BossState,
   FightEvent, FightEventType, FightOutcome, HeroDef, HeroRole, HeroState, TimedBuff,
 } from '../types';
 
@@ -32,21 +31,19 @@ const TRIGGER_EVENT: Record<BoonTrigger, FightEventType | undefined> = {
 };
 
 /**
- * Per-fight bookkeeping of one owned trigger: nth counter, own cooldown, once-flag.
- * A slot comes either from a boon (party-wide, gated by `boonAffects`) or from a hero's
- * passive (`ownerId` set — only that hero's events wake it, and `'scope'` is that hero).
+ * Per-fight bookkeeping of one hero passive: nth counter, own cooldown, once-flag.
+ * `ownerId` is its hero — only that hero's events wake it, and `'scope'` is that hero.
  */
 interface TriggerSlot {
   spec: BoonTriggerSpec;
-  boon?: BoonDef;
-  ownerId?: string;
+  ownerId: string;
   n: number;
   cd: number;
   sinceMs: number;
   used: boolean;
 }
 
-function triggerSlot(from: Pick<TriggerSlot, 'spec' | 'boon' | 'ownerId'>): TriggerSlot {
+function triggerSlot(from: Pick<TriggerSlot, 'spec' | 'ownerId'>): TriggerSlot {
   return { ...from, n: 0, cd: 0, sinceMs: 0, used: false };
 }
 
@@ -60,7 +57,7 @@ function staggeredAttackCd(def: HeroDef, index: number, partySize: number): numb
   return (def.attackIntervalMs / partySize) * index;
 }
 
-/** Running buffs stack additively, exactly like boons — boons bake into `def`, buffs ride on top. */
+/** Running buffs stack additively on top of the def's base stats. */
 function buffPct(h: HeroState, key: 'attackPct' | 'attackSpeedPct'): number {
   return h.buffs.reduce((total, b) => total + b[key], 0);
 }
@@ -92,20 +89,19 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   readonly heroes: HeroState[];
   readonly boss: BossState;
   outcome: FightOutcome = 'ongoing';
-  /** 1-based run level — how many bosses deep this run is. */
-  level = 1;
+  /** 1-based index of the encounter being fought — carried on `boss_spawn` / `end`. */
+  readonly level: number;
   /** The party (and the boss) hold their idle until the first ability of the fight. */
   started = false;
 
-  /** Owned triggers: one slot per boon copy — two copies fire twice — plus hero passives. */
+  /** Owned triggers: one slot per hero passive. */
   private triggers: TriggerSlot[] = [];
-  /** The run's boons, kept so passives can be re-slotted without losing them. */
-  private boons: BoonDef[] = [];
   /** A trigger's own payload never wakes another trigger: one level deep, no chains. */
   private firing = false;
 
-  constructor(heroDefs: HeroDef[], bossDef: BossDef) {
+  constructor(heroDefs: HeroDef[], bossDef: BossDef, level = 1) {
     super();
+    this.level = level;
     this.heroes = heroDefs.map((def, i) => ({
       def,
       hp: def.maxHp,
@@ -122,60 +118,19 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.rebuildTriggers();
   }
 
-  /**
-   * Next step of an endless run: swap in the scaled boss and restore the party
-   * (revived, full hp, no shield, cooldowns rewound). `heroDefs` carries the
-   * boons picked in the interlude — same heroes, re-derived stats.
-   */
-  startNextBoss(bossDef: BossDef, heroDefs: HeroDef[]): void {
-    this.level += 1;
-    this.boss.def = bossDef;
-    this.boss.hp = bossDef.maxHp;
-    this.boss.alive = true;
-    this.boss.attackCd = bossDef.attackIntervalMs;
-    this.boss.dots.length = 0;
-
-    this.heroes.forEach((h, i) => {
-      h.def = heroDefs.find(d => d.id === h.def.id) ?? h.def;
-      h.hp = h.def.maxHp;
-      h.shield = 0;
-      h.alive = true;
-      h.attackCd = staggeredAttackCd(h.def, i, this.heroes.length);
-      h.abilityCd = 0;
-      h.threat = 0;
-      h.buffs.length = 0;
-    });
-
-    this.outcome = 'ongoing';
-    this.started = false;
-    this.rebuildTriggers();
-    this.signal({ type: 'boss_spawn', level: this.level });
-  }
-
-  /** The run's boons. Stat boons are already baked into the defs — only triggers land here. */
-  setBoons(boons: BoonDef[]): void {
-    this.boons = boons;
-    this.rebuildTriggers();
-  }
-
-  /** Fresh slots for the boons owned and the passives the party's current defs carry. */
+  /** One slot per passive the party's defs carry. */
   private rebuildTriggers(): void {
-    this.triggers = [
-      ...this.boons
-        .filter(b => b.trigger)
-        .map(boon => triggerSlot({ spec: boon.trigger!, boon })),
-      ...this.heroes
-        .filter(h => h.def.passive)
-        .map(h => triggerSlot({ spec: h.def.passive!.trigger, ownerId: h.def.id })),
-    ];
+    this.triggers = this.heroes
+      .filter(h => h.def.passive)
+      .map(h => triggerSlot({ spec: h.def.passive!.trigger, ownerId: h.def.id }));
   }
 
-  /** Whose events a slot listens to: its passive's owner, or every hero its boon scopes. */
+  /** A slot only ever listens to its own hero's events. */
   private slotCovers(t: TriggerSlot, def: HeroDef): boolean {
-    return t.ownerId ? t.ownerId === def.id : !!t.boon && boonAffects(t.boon, def);
+    return t.ownerId === def.id;
   }
 
-  /** Every state change leaves through here: views get the event, boons get a chance to fire. */
+  /** Every state change leaves through here: views get the event, passives get a chance to fire. */
   private signal(ev: FightEvent): void {
     this.emit('fight', ev);
     if (this.triggers.length === 0 || this.firing) return;
@@ -256,7 +211,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.checkEnd();
   }
 
-  /** Runs every trigger boon's own clocks: internal cooldowns and `interval` payloads. */
+  /** Runs every trigger's own clocks: internal cooldowns and `interval` payloads. */
   private tickTriggers(deltaMs: number): void {
     for (const t of this.triggers) {
       if (t.cd > 0) t.cd = Math.max(0, t.cd - deltaMs);
@@ -395,7 +350,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     for (const h of receivers) this.grantBuff(h, buff);
   }
 
-  /** The one place a timed buff is planted — abilities and boon triggers share it. */
+  /** The one place a timed buff is planted — abilities and passive triggers share it. */
   private grantBuff(h: HeroState, buff: TimedBuff): void {
     if (!h.alive) return;
     h.buffs.push({
@@ -406,9 +361,9 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.signal({ type: 'hero_buffed', heroId: h.def.id, amount: buff.durationMs });
   }
 
-  /** A dead hero's passive lies dormant; boon slots have no owner to check. */
+  /** A dead hero's passive lies dormant. */
   private ownerAlive(t: TriggerSlot): boolean {
-    return !t.ownerId || !!this.hero(t.ownerId)?.alive;
+    return !!this.hero(t.ownerId)?.alive;
   }
 
   /** Conditions of one trigger slot. Counters and cooldowns are consumed only on a pass. */
@@ -488,7 +443,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       case 'others': return living.filter(h => h !== subject);
       case 'lowest': { const low = lowestHpAlly(this.heroes); return low ? [low] : []; }
       case 'party': return living;
-      // A passive's scope is its owner alone; a boon's is every hero it covers.
+      // A passive's scope is its owner alone.
       case 'scope': return living.filter(h => this.slotCovers(t, h.def));
       default: return subject?.alive ? [subject] : [];
     }
@@ -524,7 +479,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     h.shield -= absorbed;
     h.hp = Math.max(0, h.hp - (amount - absorbed));
     this.signal({ type: 'hero_damaged', heroId: h.def.id, amount });
-    // A shield that just ran out is its own event — boons build on the moment it pops.
+    // A shield that just ran out is its own event — passives build on the moment it pops.
     if (absorbed > 0 && h.shield === 0 && h.alive) {
       this.signal({ type: 'shield_broken', heroId: h.def.id, amount: absorbed });
     }

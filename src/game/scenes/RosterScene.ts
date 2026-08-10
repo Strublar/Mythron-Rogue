@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { TAG_LABEL, defaultParty, heroesByRole, partyTags } from '../../data/heroes';
-import { ownedRoster } from '../../engine/ProgressionStore';
+import { heroesByRole } from '../../data/heroes';
+import { ownedRoster, savedParty, setParty } from '../../engine/ProgressionStore';
 import type { HeroDef, HeroRole } from '../../types';
 import { createUnitSprite } from '../UnitAnimator';
 import { createHeroCard } from '../HeroCard';
@@ -22,16 +22,16 @@ const GRID = {
   headerH: 58,
 };
 const GRID_DEPTH = 40;
-const START_BUTTON_Y = 1252;
+const SAVE_BUTTON_Y = 1252;
 
 const hexColor = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
 
 /**
- * Pre-run party builder. The seven picks sit at their real battlefield slots, so the
- * screen reads as the fight it sets up. Tapping a slot opens that role's roster grid
- * in the boss zone; tapping a grid entry swaps it into the slot.
+ * Roster editor. The seven picks sit at their real battlefield slots, so the screen reads
+ * as the fight it sets up. Tapping a slot opens that role's roster grid in the boss zone;
+ * tapping a grid entry swaps it into the slot. SAVE persists the team for every quest.
  */
-export class CharacterSelectScene extends Phaser.Scene {
+export class RosterScene extends Phaser.Scene {
   private party!: Record<HeroRole, HeroDef[]>;
   /** The roster at its earned levels — what both the slots and the grid pick from. */
   private roster: HeroDef[] = [];
@@ -40,19 +40,17 @@ export class CharacterSelectScene extends Phaser.Scene {
   private inspector!: HeroInspector;
   /** Set when a press turned into an inspect — that release must not also count as a tap. */
   private inspected = false;
-  /** Tag counts of the current picks — what the run's boon rolls will be weighted by. */
-  private synergy!: Phaser.GameObjects.Text;
 
   constructor() {
-    super({ key: 'CharacterSelectScene' });
+    super({ key: 'RosterScene' });
   }
 
   create(): void {
-    // Levels earned in past runs are baked in here, once — everything downstream
-    // (boons, the engine, the stats card) reads these defs.
-    // Owned heroes only: the seven starters are always owned, so the default party holds.
+    // Levels earned in past encounters are baked in here, once — everything downstream
+    // (the engine, the stats card) reads these defs.
+    // Owned heroes only: the seven starters are always owned, so the saved party holds.
     this.roster = ownedRoster();
-    const seed = defaultParty(this.roster);
+    const seed = savedParty();
     this.party = {
       tank: seed.filter(h => h.role === 'tank'),
       dps: seed.filter(h => h.role === 'dps'),
@@ -62,16 +60,14 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.gridObjects = [];
 
     this.drawBackground();
-    this.label(GAME_WIDTH / 2, 46, 'BUILD YOUR PARTY', 38, '#ffd76b', 'bold');
+    this.label(GAME_WIDTH / 2, 46, 'EDIT ROSTER', 38, '#ffd76b', 'bold');
     this.label(GAME_WIDTH / 2, 84, 'Tap a hero to swap it · hold for stats', 18, '#9aa3b8');
-    this.synergy = this.label(GAME_WIDTH / 2, 110, '', 16, '#ffd76b', 'bold');
 
     this.inspector = new HeroInspector(this);
     this.inspector.onOpen = () => { this.inspected = true; };
     for (const role of ROLE_ORDER) this.party[role].forEach((_, i) => this.buildSlot(role, i));
-    this.drawSynergy();
 
-    createButton(this, GAME_WIDTH / 2, START_BUTTON_Y, 'START RUN', () => this.startRun());
+    createButton(this, GAME_WIDTH / 2, SAVE_BUTTON_Y, 'SAVE', () => this.save());
   }
 
   /** Arms the shared long-press. Pair with `wasTap` on the matching release. */
@@ -87,10 +83,12 @@ export class CharacterSelectScene extends Phaser.Scene {
     return tap;
   }
 
-  private startRun(): void {
+  /** Banks the team and heads back — every quest fields whatever is saved here. */
+  private save(): void {
     this.closeGrid();
+    setParty(this.orderedParty());
     this.cameras.main.fadeOut(300, 0, 0, 0, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
-      if (progress === 1) this.scene.start('BossFightScene', { party: this.orderedParty() });
+      if (progress === 1) this.scene.start('MainMenuScene');
     });
   }
 
@@ -181,17 +179,6 @@ export class CharacterSelectScene extends Phaser.Scene {
     this.closeGrid();
     this.party[role][index] = hero;
     this.buildSlot(role, index);
-    this.drawSynergy();
-  }
-
-  /** Only tags shared by 2+ heroes matter — those are the ones that pull boon offers. */
-  private drawSynergy(): void {
-    const shared = partyTags(this.orderedParty()).filter(t => t.count > 1);
-    this.synergy.setText(
-      shared.length === 0
-        ? 'No shared tags — boons will roll wide'
-        : shared.map(t => `${TAG_LABEL[t.tag].toUpperCase()} ×${t.count}`).join('  ·  '),
-    );
   }
 
   // ── Chrome ──────────────────────────────────────────────────────────────────

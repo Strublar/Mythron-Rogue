@@ -2,10 +2,7 @@
 
 export type HeroRole = 'tank' | 'dps' | 'heal';
 
-/**
- * Identity tags every hero carries: one faction, one archetype. Boons roll on tags,
- * so a party stacked on a tag draws more boons for it — that is the synergy loop.
- */
+/** Identity tags every hero carries: one faction, one archetype. Flavour and card copy. */
 export type HeroFaction =
   | 'lyonar' | 'songhai' | 'vetruvian' | 'abyssian' | 'magmar' | 'vanar' | 'mercenary';
 export type HeroArchetype = 'arcanyst' | 'blade' | 'golem' | 'beast' | 'blood';
@@ -21,7 +18,7 @@ export interface AbilityDot {
   durationMs: number;
 }
 
-/** A timed stat swing. Percentages, like boons. Granted by casts and by boon triggers. */
+/** A timed stat swing, in percent. Granted by casts and by passive triggers. */
 export interface TimedBuff {
   durationMs: number;
   attackPct?: number;
@@ -62,7 +59,7 @@ export interface HeroDef {
   unitKey: string;      // key into UNIT_DEFS
   name: string;
   role: HeroRole;
-  tags: HeroTag[];      // faction + archetype — what tag boons key off
+  tags: HeroTag[];      // faction + archetype — identity and card copy
   rarity: HeroRarity;   // orb pull weight and card tint — never touches stats
   maxHp: number;
   attack: number;       // auto-attack damage — heal amount for healers
@@ -75,19 +72,26 @@ export interface HeroDef {
 }
 
 /**
- * A hero's account-wide progression: levels earned across runs. Persisted, never
- * part of a run — `applyProgress` folds it into the `HeroDef` the run starts from.
+ * A hero's account-wide progression: levels earned across encounters. Persisted, never
+ * part of a fight — `applyProgress` folds it into the `HeroDef` the fight starts from.
  */
 export interface HeroProgress {
   level: number;
   exp: number;          // toward the next level
 }
 
-/** Everything that survives a run: per-hero levels, the heroes owned, and the purse. */
+/**
+ * Everything that survives an encounter: per-hero levels, the heroes owned, the purse,
+ * the saved roster and how far the quest chain has been cleared.
+ */
 export interface AccountState {
   heroes: Record<string, HeroProgress>;
   owned: string[];
   gold: number;
+  /** Hero ids of the saved party, in tank → dps → heal slot order. */
+  party: string[];
+  /** How many encounters of the chain are beaten. `cleared + 1` is the next one. */
+  cleared: number;
 }
 
 /** The result of one orb, for the shop's reveal panel. */
@@ -103,7 +107,7 @@ export interface OrbPull {
 
 /**
  * The one thing a hero unlocks at PASSIVE_LEVEL. Always on, no cooldown bar, no cast —
- * it rides the same trigger machinery as boons, but owned by a single hero.
+ * it rides the shared trigger machinery, owned by a single hero.
  */
 export interface HeroPassive {
   id: string;
@@ -113,7 +117,7 @@ export interface HeroPassive {
   trigger: BoonTriggerSpec;
 }
 
-/** A running buff on a hero. Percentages sum across stacks, like boons. */
+/** A running buff on a hero. Percentages sum across stacks. */
 export interface ActiveBuff {
   attackPct: number;
   attackSpeedPct: number;
@@ -140,9 +144,6 @@ export interface HeroState {
   buffs: ActiveBuff[];
 }
 
-/** Who a boon buffs: one role, one tag, or every hero. */
-export type BoonScope = HeroRole | HeroTag | 'party';
-
 /** Every field is a percent bonus, additive across stacks of the same effect. */
 export interface BoonEffect {
   maxHpPct?: number;
@@ -153,7 +154,7 @@ export interface BoonEffect {
 }
 
 /**
- * What wakes a trigger boon up. All but `interval` ride a `FightEvent`;
+ * What wakes a trigger up. All but `interval` ride a `FightEvent`;
  * the `*_hp_below` pair listens on damage and checks a threshold.
  */
 export type BoonTrigger =
@@ -164,7 +165,7 @@ export type BoonTrigger =
 
 /**
  * Who a trigger's payload lands on. `actor` is the hero the event happened *to*,
- * `source` the hero that caused it, `scope` every living hero the boon covers.
+ * `source` the hero that caused it, `scope` every living hero the trigger covers.
  */
 export type BoonTargetKind = 'actor' | 'source' | 'others' | 'lowest' | 'party' | 'scope';
 
@@ -202,20 +203,6 @@ export interface BoonTriggerSpec {
   do: BoonAction;
 }
 
-/**
- * A permanent run upgrade, picked between fights. Stacks with itself: stat boons add
- * their percentages, trigger boons simply fire once per copy owned.
- */
-export interface BoonDef {
-  id: string;
-  name: string;
-  scope: BoonScope;
-  effect?: BoonEffect;
-  /** Percentages multiply by how many heroes in the party the scope covers. */
-  perMember?: boolean;
-  trigger?: BoonTriggerSpec;
-}
-
 export interface BossDef {
   id: string;
   unitKey: string;
@@ -223,6 +210,19 @@ export interface BossDef {
   maxHp: number;
   attack: number;
   attackIntervalMs: number;
+}
+
+/**
+ * One fight of the quest chain: the boss it fields and what beating it pays. Encounter 1
+ * is the base boss; each step up scales it and pays more.
+ */
+export interface EncounterDef {
+  index: number;        // 1-based position in the chain
+  name: string;
+  boss: BossDef;
+  /** Exp handed to every hero fielded. */
+  exp: number;
+  gold: number;
 }
 
 export interface BossState {
@@ -233,7 +233,7 @@ export interface BossState {
   dots: ActiveDot[];
 }
 
-/** 'victory' = the current boss is down; the run itself only ends on 'defeat'. */
+/** 'victory' = the boss is down, 'defeat' = the party is wiped. Either ends the encounter. */
 export type FightOutcome = 'ongoing' | 'victory' | 'defeat';
 
 export type FightEventType =
@@ -262,5 +262,5 @@ export interface FightEvent {
   fromDot?: boolean;     // boss_damaged: this hit is a dot tick
   amount?: number;
   outcome?: FightOutcome;
-  level?: number;        // run level (boss_spawn / end)
+  level?: number;        // encounter index (boss_spawn / end)
 }

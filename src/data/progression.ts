@@ -18,9 +18,9 @@ export const LEVEL_GROWTH: BoonEffect = {
 /** Exp needed to leave the level at this index. Index 0 is unused; index 10 is the cap. */
 const EXP_TO_NEXT = [0, 20, 30, 45, 60, 80, 100, 125, 150, 180, 0];
 
-/** Exp a run of `runLevel` bosses hands each hero that fought it. */
-const RUN_EXP_BASE = 10;
-const RUN_EXP_PER_LEVEL = 10;
+/** Exp an encounter hands each hero that fought it. Later encounters pay more. */
+const ENCOUNTER_EXP_BASE = 10;
+const ENCOUNTER_EXP_PER_STEP = 10;
 
 export const STARTING_PROGRESS: HeroProgress = { level: 1, exp: 0 };
 
@@ -33,9 +33,9 @@ export function isMaxLevel(p: HeroProgress): boolean {
   return p.level >= MAX_HERO_LEVEL;
 }
 
-/** Deeper runs pay better. `runLevel` is the highest boss level the party reached. */
-export function runExp(runLevel: number): number {
-  return RUN_EXP_BASE + RUN_EXP_PER_LEVEL * Math.max(0, runLevel - 1);
+/** Exp one cleared encounter pays every hero fielded in it. */
+export function encounterExp(index: number): number {
+  return ENCOUNTER_EXP_BASE + ENCOUNTER_EXP_PER_STEP * Math.max(0, index - 1);
 }
 
 /** Banks `gain` exp, rolling levels over. Returns a fresh progress — never mutates. */
@@ -50,8 +50,8 @@ export function addExp(p: HeroProgress, gain: number): HeroProgress {
 }
 
 /**
- * The def a run actually fights with: base roster stats grown by the levels earned, plus
- * the passive once PASSIVE_LEVEL is reached. Boons apply on top of this, never below it.
+ * The def a fight resolves against: base roster stats grown by the levels earned, plus
+ * the passive once PASSIVE_LEVEL is reached.
  */
 export function applyProgress(def: HeroDef, p: HeroProgress): HeroDef {
   const level = Math.min(Math.max(1, p.level), MAX_HERO_LEVEL);
