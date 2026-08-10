@@ -21,14 +21,17 @@ export class DragCastController {
   ) {
     this.gfx = scene.add.graphics().setDepth(90);
 
-    for (const [heroId, view] of heroViews) {
-      view.sprite.setInteractive({ useHandCursor: true });
-      view.sprite.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.begin(heroId));
-    }
+    for (const [heroId, view] of heroViews) this.register(heroId, view);
 
     scene.input.on(Phaser.Input.Events.POINTER_MOVE, (p: Phaser.Input.Pointer) => this.redraw(p));
     scene.input.on(Phaser.Input.Events.POINTER_UP, (p: Phaser.Input.Pointer) => this.finish(p));
     scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, () => this.cancel());
+  }
+
+  /** Arms one hero's sprite for dragging — also how a unit drafted mid-run joins in. */
+  register(heroId: string, view: CombatantView): void {
+    view.sprite.setInteractive({ useHandCursor: true });
+    view.sprite.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.begin(heroId));
   }
 
   private begin(heroId: string): void {

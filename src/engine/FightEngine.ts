@@ -60,6 +60,20 @@ function staggeredAttackCd(def: HeroDef, index: number, partySize: number): numb
   return (def.attackIntervalMs / partySize) * index;
 }
 
+/** A party at full hp with nothing on it — how every fight in the run opens. */
+function makeHeroStates(heroDefs: HeroDef[]): HeroState[] {
+  return heroDefs.map((def, i) => ({
+    def,
+    hp: def.maxHp,
+    shield: 0,
+    alive: true,
+    attackCd: staggeredAttackCd(def, i, heroDefs.length),
+    abilityCd: 0,
+    threat: 0,
+    buffs: [],
+  }));
+}
+
 /** Running buffs stack additively, exactly like boons — boons bake into `def`, buffs ride on top. */
 function buffPct(h: HeroState, key: 'attackPct' | 'attackSpeedPct'): number {
   return h.buffs.reduce((total, b) => total + b[key], 0);
@@ -106,16 +120,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
 
   constructor(heroDefs: HeroDef[], bossDef: BossDef) {
     super();
-    this.heroes = heroDefs.map((def, i) => ({
-      def,
-      hp: def.maxHp,
-      shield: 0,
-      alive: true,
-      attackCd: staggeredAttackCd(def, i, heroDefs.length),
-      abilityCd: 0,
-      threat: 0,
-      buffs: [],
-    }));
+    this.heroes = makeHeroStates(heroDefs);
     this.boss = {
       def: bossDef, hp: bossDef.maxHp, alive: true, attackCd: bossDef.attackIntervalMs, dots: [],
     };
@@ -124,8 +129,8 @@ export class FightEngine extends Phaser.Events.EventEmitter {
 
   /**
    * Next step of an endless run: swap in the scaled boss and restore the party
-   * (revived, full hp, no shield, cooldowns rewound). `heroDefs` carries the
-   * boons picked in the interlude — same heroes, re-derived stats.
+   * (revived, full hp, no shield, cooldowns rewound). `heroDefs` is the party as the
+   * interlude left it — a unit drafted between fights joins here.
    */
   startNextBoss(bossDef: BossDef, heroDefs: HeroDef[]): void {
     this.level += 1;
@@ -135,16 +140,10 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.boss.attackCd = bossDef.attackIntervalMs;
     this.boss.dots.length = 0;
 
-    this.heroes.forEach((h, i) => {
-      h.def = heroDefs.find(d => d.id === h.def.id) ?? h.def;
-      h.hp = h.def.maxHp;
-      h.shield = 0;
-      h.alive = true;
-      h.attackCd = staggeredAttackCd(h.def, i, this.heroes.length);
-      h.abilityCd = 0;
-      h.threat = 0;
-      h.buffs.length = 0;
-    });
+    // A fresh fight resets every hero anyway, so rebuild rather than patch — that is what
+    // lets a unit drafted in the interlude join the party mid-run.
+    this.heroes.length = 0;
+    this.heroes.push(...makeHeroStates(heroDefs));
 
     this.outcome = 'ongoing';
     this.started = false;

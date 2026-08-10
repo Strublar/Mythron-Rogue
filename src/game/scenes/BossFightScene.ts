@@ -12,21 +12,21 @@ import { createButton } from '../ui';
 import type { InterludeData } from './InterludeScene';
 import {
   BOSS_ANCHOR, BOSS_BAR_Y, BOSS_GROUND_Y, BOSS_SCALE, GAME_HEIGHT, GAME_WIDTH,
-  HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, ROLE_COLOR, withSlots,
+  HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, ROLE_COLOR, seatSlot,
 } from '../layout';
 
 /** Pause between a boss dying and the between-fights screen opening. */
 const NEXT_BOSS_DELAY_MS = 1400;
 
-/** The party built on the selection screen — the only thing the fight needs to start. */
+/** The general picked on the selection screen — it opens the run alone. */
 export interface BossFightData {
-  party: HeroDef[];
+  general: HeroDef;
 }
 
 export class BossFightScene extends Phaser.Scene {
   private engine!: FightEngine;
   private run!: RunState;
-  private party!: HeroDef[];
+  private general!: HeroDef;
   private bossView!: CombatantView;
   private heroViews!: Map<string, CombatantView>;
   private dragCast!: DragCastController;
@@ -43,7 +43,7 @@ export class BossFightScene extends Phaser.Scene {
   }
 
   init(data: BossFightData): void {
-    this.party = data.party;
+    this.general = data.general;
   }
 
   create(): void {
@@ -51,10 +51,10 @@ export class BossFightScene extends Phaser.Scene {
     this.frozen = false;
     this.drawBackground();
 
-    // Each entry into the scene is a brand new run: boons do not carry over.
-    this.run = new RunState(this.party);
+    // Each entry into the scene is a brand new run: the general starts it alone.
+    this.run = new RunState(this.general);
     const firstBoss = bossForLevel(1);
-    this.engine = new FightEngine(this.run.heroDefs(), firstBoss);
+    this.engine = new FightEngine(this.run.party(), firstBoss);
 
     this.bossView = new CombatantView(this, {
       unitKey: firstBoss.unitKey,
@@ -82,47 +82,41 @@ export class BossFightScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.heroViews = new Map();
-    const placed = withSlots(this.run.heroDefs());
-    for (const { def, slot } of placed) {
-      this.heroViews.set(def.id, new CombatantView(this, {
-        unitKey: def.unitKey,
-        x: slot.x,
-        y: slot.y,
-        scale: HERO_SCALE,
-        barWidth: 96,
-        barY: slot.y + HERO_BAR_DY,
-        groundY: slot.y + HERO_GROUND_DY,
-        barFill: ROLE_COLOR[def.role],
-        showAbilityBar: true,
-        showThreat: true,
-      }));
-    }
-
     this.buildStartHint();
     this.dragCast = new DragCastController(this, this.engine, this.heroViews, this.bossView);
-    this.buildInspector(placed);
+    this.inspector = new HeroInspector(this);
+    // Opening the card kills the pending drag, so releasing over the boss never casts.
+    this.inspector.onOpen = () => this.dragCast.cancel();
+
+    for (const { def, slot } of this.run.placed()) this.addHeroView(def, slot);
+
     this.engine.on('fight', (e: FightEvent) => this.onFightEvent(e));
     this.refreshViews();
   }
 
   /**
-   * Until the opening cast nobody is swinging, so a hold on a hero reads its stats card
-   * instead of arming a drag. The sprites are already interactive for drag-casting.
+   * Seats one hero on the battlefield: sprite, bars, drag-cast and the long-press stats
+   * card. Used for the general at run start and for every unit drafted between fights.
+   * Until the opening cast nobody is swinging, so a hold reads the card instead of dragging.
    */
-  private buildInspector(placed: { def: HeroDef; slot: { x: number; y: number } }[]): void {
-    this.inspector = new HeroInspector(this);
-    // Opening the card kills the pending drag, so releasing over the boss never casts.
-    this.inspector.onOpen = () => this.dragCast.cancel();
-
-    for (const { def, slot } of placed) {
-      const view = this.heroViews.get(def.id);
-      if (!view) continue;
-      view.sprite.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-        // Read the live def: boons swap it in on every new boss.
-        const current = this.engine.hero(def.id)?.def ?? def;
-        this.inspector.press(current, slot.x, slot.y);
-      });
-    }
+  private addHeroView(def: HeroDef, slot: { x: number; y: number }): void {
+    const view = new CombatantView(this, {
+      unitKey: def.unitKey,
+      x: slot.x,
+      y: slot.y,
+      scale: HERO_SCALE,
+      barWidth: 96,
+      barY: slot.y + HERO_BAR_DY,
+      groundY: slot.y + HERO_GROUND_DY,
+      barFill: ROLE_COLOR[def.role],
+      showAbilityBar: true,
+      showThreat: true,
+    });
+    this.heroViews.set(def.id, view);
+    this.dragCast.register(def.id, view);
+    view.sprite.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
+      this.inspector.press(this.engine.hero(def.id)?.def ?? def, slot.x, slot.y);
+    });
   }
 
   /** Nobody swings until the first ability lands — tell the player so. */
@@ -232,18 +226,23 @@ export class BossFightScene extends Phaser.Scene {
     const data: InterludeData = {
       clearedLevel: this.engine.level,
       run: this.run,
-      onDone: () => this.resumeRun(),
+      onDone: drafted => this.resumeRun(drafted),
     };
     this.scene.launch('InterludeScene', data);
   }
 
-  private resumeRun(): void {
+  /** Seats the drafted unit — if any — then sends the party into the next boss. */
+  private resumeRun(drafted?: HeroDef): void {
     if (this.ended) return;
     this.frozen = false;
     this.input.enabled = true;
-    // Stat boons ride in the defs; trigger boons need the engine to hold them.
-    this.engine.setBoons(this.run.boons);
-    this.engine.startNextBoss(bossForLevel(this.engine.level + 1), this.run.heroDefs());
+
+    if (drafted) {
+      const seat = this.run.addUnit(drafted);
+      if (seat >= 0) this.addHeroView(drafted, seatSlot(seat));
+    }
+
+    this.engine.startNextBoss(bossForLevel(this.engine.level + 1), this.run.party());
   }
 
   /** Resets every bar and sprite for the freshly spawned boss and the restored party. */
@@ -303,7 +302,7 @@ export class BossFightScene extends Phaser.Scene {
   private showRunOverOverlay(highestLevel: number): void {
     this.ended = true;
     // The run is over: the party banks its exp and gold before the screen even draws.
-    const gains = grantRunExp(this.party, highestLevel);
+    const gains = grantRunExp(this.run.party(), highestLevel);
     const earnedGold = grantRunGold(highestLevel);
     const depth = 200;
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setDepth(depth);
@@ -328,10 +327,10 @@ export class BossFightScene extends Phaser.Scene {
 
     const reportBottom = this.drawExpReport(gains, earnedGold, GAME_HEIGHT / 2 + 60, depth);
 
-    // A new run means a new party — back to the selection screen, not a blind restart.
+    // A new run means a new general — back to the selection screen, not a blind restart.
     createButton(
       this, GAME_WIDTH / 2, reportBottom + 80, 'RETRY',
-      () => this.scene.start('CharacterSelectScene'), depth,
+      () => this.scene.start('GeneralSelectScene'), depth,
     );
   }
 

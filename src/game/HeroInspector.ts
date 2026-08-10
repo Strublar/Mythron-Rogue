@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { HeroDef } from '../types';
 import { HeroTooltip } from './HeroTooltip';
-import { withSlots } from './layout';
+import { seatedSlots } from './layout';
 
 /** Hold this long on a hero before its stats card opens. */
 const LONG_PRESS_MS = 300;
@@ -34,9 +34,9 @@ export class HeroInspector {
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cancel());
   }
 
-  /** Invisible press zones over every slot — for scenes that draw no heroes of their own. */
-  addProbes(defs: HeroDef[]): void {
-    for (const { def, slot } of withSlots(defs)) {
+  /** Invisible press zones over every filled seat — for scenes that draw no heroes of their own. */
+  addProbes(seats: readonly (HeroDef | null)[]): void {
+    for (const { def, slot } of seatedSlots(seats)) {
       this.scene.add
         .zone(slot.x, slot.y, PROBE_W, PROBE_H)
         .setDepth(PROBE_DEPTH)

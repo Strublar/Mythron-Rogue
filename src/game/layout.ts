@@ -41,10 +41,33 @@ export const HERO_SLOTS: Record<HeroRole, { x: number; y: number }[]> = {
   ],
 };
 
-/** Pairs each def with its row slot, in roster order — the one place slots get handed out. */
-export function withSlots<T extends { role: HeroRole }>(
-  defs: T[],
-): { def: T; slot: { x: number; y: number } }[] {
-  const next = { tank: 0, dps: 0, heal: 0 };
-  return defs.map(def => ({ def, slot: HERO_SLOTS[def.role][next[def.role]++] }));
+/**
+ * The party's seven seats in row order. A run starts with only one of them filled and
+ * fills the rest as units are drafted, so a party is a sparse seat array, not a list.
+ */
+export const PARTY_SEATS: { role: HeroRole; index: number }[] = [
+  { role: 'tank', index: 0 },
+  { role: 'tank', index: 1 },
+  { role: 'dps', index: 0 },
+  { role: 'dps', index: 1 },
+  { role: 'dps', index: 2 },
+  { role: 'heal', index: 0 },
+  { role: 'heal', index: 1 },
+];
+
+export const SEAT_COUNT = PARTY_SEATS.length;
+
+/** The general opens the run alone, so it takes the centre dps seat. */
+export const GENERAL_SEAT = 3;
+
+export function seatSlot(seat: number): { x: number; y: number } {
+  const { role, index } = PARTY_SEATS[seat];
+  return HERO_SLOTS[role][index];
+}
+
+/** Pairs every filled seat with its row slot — the one place slots get handed out. */
+export function seatedSlots<T>(
+  seats: readonly (T | null)[],
+): { def: T; seat: number; slot: { x: number; y: number } }[] {
+  return seats.flatMap((def, seat) => (def ? [{ def, seat, slot: seatSlot(seat) }] : []));
 }

@@ -4,14 +4,16 @@ export const SHADOWLORD: BossDef = {
   id: 'shadowlord',
   unitKey: 'boss_shadowlord',
   name: 'Shadowlord',
-  // Tuned so idle auto-attacks alone lose the tank line: winning needs abilities.
-  maxHp: 12000,
-  attack: 200,
-  attackIntervalMs: 1800,
+  // Level 1 is fought by the general *alone*, so the base is tuned for a single hero:
+  // winnable on auto-attacks plus its ability, lethal if the ability is never cast.
+  maxHp: 1600,
+  attack: 55,
+  attackIntervalMs: 2000,
 };
 
 // Endless run scaling: each cleared boss makes the next one tankier, hit harder and
-// swing slightly faster, down to a floor so the fight stays readable.
+// swing slightly faster, down to a floor so the fight stays readable. The party grows a
+// unit per level up to seven, so the curve covers both the extra bodies and the difficulty.
 const HP_GROWTH = 1.35;
 const ATTACK_GROWTH = 1.18;
 const INTERVAL_DECAY = 0.97;

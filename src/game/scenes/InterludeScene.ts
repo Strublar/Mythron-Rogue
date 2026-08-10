@@ -1,52 +1,54 @@
 import Phaser from 'phaser';
-import { boonAffects, rollBoons } from '../../data/boons';
+import { ROSTER } from '../../data/heroes';
+import { rollUnitOffers } from '../../data/unitDraft';
 import type { RunState } from '../../engine/RunState';
-import { GAME_WIDTH, HERO_GROUND_DY, withSlots } from '../layout';
+import { GAME_WIDTH, HERO_GROUND_DY, seatSlot } from '../layout';
 import { HeroInspector } from '../HeroInspector';
-import { createBoonCard, type BoonCardHandle } from '../BoonCard';
-import { BoonListPanel } from '../BoonListPanel';
+import { createHeroCard } from '../HeroCard';
 import { createButton, type ButtonHandle } from '../ui';
-import type { BoonDef } from '../../types';
+import type { HeroDef } from '../../types';
 
 export interface InterludeData {
   /** Level whose boss was just cleared. */
   clearedLevel: number;
-  /** Run-long state: the picked boon lands here before the fight scene resumes. */
+  /** Run-long state: the drafted unit is seated by the fight scene, not here. */
   run: RunState;
-  /** Handed back to the fight scene once a boon is locked in. */
-  onDone: () => void;
+  /** Handed back to the fight scene, carrying the unit to seat (none once the party is full). */
+  onDone: (drafted?: HeroDef) => void;
 }
 
 const BUTTON_DEPTH = 20;
 const RING_DEPTH = 15;
 
 /** Reward window, kept inside the vacated boss zone so the party rows stay clear. */
-const PANEL = { y: 390, w: 640, h: 540 };
+const PANEL = { y: 360, w: GAME_WIDTH - 24, h: 460 };
 const OFFER_COUNT = 3;
-const CARD = { w: 580, h: 96, gap: 10, top: 262 };
-/** Locks the highlighted boon in, parked under the offers. */
-const CONFIRM_Y = 612;
-/** Boon list opener, parked under the back row. */
-const BOONS_BUTTON_Y = 1246;
+const CARD = { w: 216, h: 150, gap: 12, y: 400 };
+/** Locks the highlighted unit in, parked under the offers. */
+const CONFIRM_Y = 540;
 
-/** Ring drawn under each hero the highlighted boon would buff. */
+/** Ring drawn under the seat the highlighted unit would take. */
 const RING_W = 96;
 const RING_COLOR = 0xffd76b;
 
 /**
- * Between-fights screen. Launched over a frozen BossFightScene: only the boss zone
- * is covered, so the party rows stay visible, animating and inspectable. Tapping an
- * offer highlights the heroes it buffs; CONFIRM banks it for the rest of the run.
+ * Between-fights screen. Launched over a frozen BossFightScene: only the boss zone is
+ * covered, so the party rows stay visible, animating and inspectable. Three units are
+ * offered — tapping one rings the seat it would fill, CONFIRM recruits it for the run.
+ * Once all seven seats are taken there is nothing left to earn: the screen just continues.
  */
 export class InterludeScene extends Phaser.Scene {
-  private boonList!: BoonListPanel;
   private run!: RunState;
-  private onDone!: () => void;
-  private cards: { boon: BoonDef; handle: BoonCardHandle }[] = [];
+  private onDone!: (drafted?: HeroDef) => void;
+  private offers: HeroDef[] = [];
+  private cardObjects: Phaser.GameObjects.GameObject[] = [];
   private rings: Phaser.GameObjects.Ellipse[] = [];
   private confirm!: ButtonHandle;
-  private selected?: BoonDef;
+  private selected?: HeroDef;
   private chosen = false;
+  private inspector!: HeroInspector;
+  /** Set when a press turned into an inspect — that release must not also count as a tap. */
+  private inspected = false;
 
   constructor() {
     super({ key: 'InterludeScene' });
@@ -57,7 +59,7 @@ export class InterludeScene extends Phaser.Scene {
     this.onDone = data.onDone;
     this.chosen = false;
     this.selected = undefined;
-    this.cards = [];
+    this.cardObjects = [];
     this.rings = [];
     const cx = GAME_WIDTH / 2;
 
@@ -65,69 +67,108 @@ export class InterludeScene extends Phaser.Scene {
       .rectangle(cx, PANEL.y, PANEL.w, PANEL.h, 0x05060f, 0.88)
       .setStrokeStyle(2, 0xffd76b, 0.5);
 
-    this.label(cx, 165, 'BOSS DEFEATED', 46, '#ffd76b', 'bold');
-    this.label(cx, 203, `LEVEL ${data.clearedLevel} CLEARED`, 22, '#f3e6c8');
-    this.label(cx, 240, 'CHOOSE A BOON', 24, '#9aa3b8', 'bold');
+    this.label(cx, 175, 'BOSS DEFEATED', 46, '#ffd76b', 'bold');
+    this.label(cx, 213, `LEVEL ${data.clearedLevel} CLEARED`, 22, '#f3e6c8');
 
-    const party = this.run.baseDefs();
-    rollBoons(OFFER_COUNT, party).forEach((boon, i) => {
-      const y = CARD.top + (CARD.h + CARD.gap) * i + CARD.h / 2;
-      const handle = createBoonCard(this, cx, y, CARD.w, CARD.h, boon, party, b => this.select(b), BUTTON_DEPTH);
-      this.cards.push({ boon, handle });
-    });
+    this.inspector = new HeroInspector(this);
+    this.inspector.onOpen = () => { this.inspected = true; };
+    this.inspector.addProbes(this.run.seatArray());
 
-    this.confirm = createButton(this, cx, CONFIRM_Y, 'CONFIRM', () => this.pick(), BUTTON_DEPTH);
-    this.confirm.setEnabled(false);
-
-    this.boonList = new BoonListPanel(this);
-    createButton(this, cx, BOONS_BUTTON_Y, 'BOONS', () => this.boonList.show(this.run.stacks(), this.run.baseDefs()), BUTTON_DEPTH);
-
-    new HeroInspector(this).addProbes(this.run.heroDefs());
+    this.offers = rollUnitOffers(OFFER_COUNT, this.run.seatArray(), ROSTER);
+    if (this.offers.length === 0) this.buildFullParty(cx);
+    else this.buildOffers(cx);
   }
 
-  /** Tapping an offer only highlights it — nothing is banked until CONFIRM. */
-  private select(boon: BoonDef): void {
+  /** Every seat taken: nothing more is earned this run. */
+  private buildFullParty(cx: number): void {
+    this.label(cx, 262, 'PARTY COMPLETE', 26, '#9aa3b8', 'bold');
+    this.label(cx, 302, 'No more units to recruit — the run rolls on.', 18, '#f3e6c8');
+    createButton(this, cx, CONFIRM_Y, 'CONTINUE', () => this.pick(), BUTTON_DEPTH);
+  }
+
+  private buildOffers(cx: number): void {
+    this.label(cx, 258, 'RECRUIT A UNIT', 24, '#9aa3b8', 'bold');
+    this.redrawCards();
+    this.confirm = createButton(this, cx, CONFIRM_Y, 'RECRUIT', () => this.pick(), BUTTON_DEPTH);
+    this.confirm.setEnabled(false);
+  }
+
+  /** Arms the shared long-press. Pair with `wasTap` on the matching release. */
+  private beginPress(hero: HeroDef, x: number, y: number): void {
+    this.inspected = false;
+    this.inspector.press(hero, x, y);
+  }
+
+  /** True when the gesture that just ended was a tap rather than an inspect. */
+  private wasTap(): boolean {
+    const tap = !this.inspected;
+    this.inspector.cancel();
+    return tap;
+  }
+
+  /** Tapping an offer only highlights it — nothing is recruited until CONFIRM. */
+  private select(hero: HeroDef): void {
     if (this.chosen) return;
-    this.selected = boon;
-    for (const card of this.cards) card.handle.setSelected(card.boon === boon);
-    this.highlight(boon);
+    this.selected = hero;
+    // The "current" frame lives on the card, so redraw the row against the new pick.
+    this.redrawCards();
+    this.highlight(hero);
     this.confirm.setEnabled(true);
   }
 
-  /** Rings every hero the offer's scope covers, so the buff's reach is visible. */
-  private highlight(boon: BoonDef): void {
+  private redrawCards(): void {
+    for (const o of this.cardObjects) o.destroy();
+    const before = new Set(this.children.list);
+    const cx = GAME_WIDTH / 2;
+    const rowW = this.offers.length * CARD.w + (this.offers.length - 1) * CARD.gap;
+    const left = cx - rowW / 2 + CARD.w / 2;
+    this.offers.forEach((hero, i) => {
+      createHeroCard(this, left + i * (CARD.w + CARD.gap), CARD.y, CARD.w, CARD.h, hero, {
+        taken: false,
+        current: hero.id === this.selected?.id,
+        onPressStart: (h, hx, hy) => this.beginPress(h, hx, hy),
+        onPressCancel: () => this.inspector.cancel(),
+        onTap: picked => { if (this.wasTap()) this.select(picked); },
+      }, BUTTON_DEPTH);
+    });
+    this.cardObjects = this.children.list.filter(o => !before.has(o));
+  }
+
+  /** Rings the seat the offer would fill, so where it lands is visible before confirming. */
+  private highlight(hero: HeroDef): void {
     for (const ring of this.rings) {
       this.tweens.killTweensOf(ring);
       ring.destroy();
     }
     this.rings = [];
 
-    for (const { def, slot } of withSlots(this.run.heroDefs())) {
-      if (!boonAffects(boon, def)) continue;
-      const ring = this.add
-        .ellipse(slot.x, slot.y + HERO_GROUND_DY, RING_W, RING_W * 0.38)
-        .setStrokeStyle(4, RING_COLOR, 1)
-        .setDepth(RING_DEPTH);
-      this.rings.push(ring);
-      this.tweens.add({
-        targets: ring,
-        scaleX: 1.18,
-        scaleY: 1.18,
-        alpha: 0.45,
-        duration: 620,
-        yoyo: true,
-        repeat: -1,
-        ease: 'Sine.easeInOut',
-      });
-    }
+    const seat = this.run.nextSeat(hero.role);
+    if (seat < 0) return;
+    const slot = seatSlot(seat);
+    const ring = this.add
+      .ellipse(slot.x, slot.y + HERO_GROUND_DY, RING_W, RING_W * 0.38)
+      .setStrokeStyle(4, RING_COLOR, 1)
+      .setDepth(RING_DEPTH);
+    this.rings.push(ring);
+    this.tweens.add({
+      targets: ring,
+      scaleX: 1.18,
+      scaleY: 1.18,
+      alpha: 0.45,
+      duration: 620,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.easeInOut',
+    });
   }
 
-  /** Banks the boon, then hands the fight scene back — the next boss spawns buffed. */
+  /** Hands the fight scene the pick — it seats the unit and spawns the next boss. */
   private pick(): void {
-    if (this.chosen || !this.selected) return;
+    if (this.chosen) return;
+    if (this.offers.length > 0 && !this.selected) return;
     this.chosen = true;
-    this.run.addBoon(this.selected);
-    this.onDone();
+    this.inspector.cancel();
+    this.onDone(this.selected);
     this.scene.stop();
   }
 
