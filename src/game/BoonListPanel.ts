@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { boonText } from '../data/boons';
-import type { BoonStack } from '../engine/RunState';
+import type { BoonStack } from '../data/boons';
 import type { HeroDef } from '../types';
 import { BOON_CREAM, BOON_GOLD, BOON_MUTED } from './BoonCard';
 import { GAME_HEIGHT, GAME_WIDTH } from './layout';

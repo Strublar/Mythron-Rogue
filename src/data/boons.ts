@@ -380,3 +380,13 @@ export function applyBoons(party: HeroDef[], boons: BoonDef[]): HeroDef[] {
     });
   });
 }
+
+/**
+ * Owned boons collapsed to unique entries with their stack count. Boons are not part of the
+ * run loop today — the between-fights reward is a unit draft — but the pool and its
+ * machinery are kept intact.
+ */
+export interface BoonStack {
+  boon: BoonDef;
+  count: number;
+}

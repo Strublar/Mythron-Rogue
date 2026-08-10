@@ -109,3 +109,38 @@ export const SHIELD_ORACLE: Ability = {
   id: 'shield_oracle', name: 'Oracle Ward', targetKind: 'ally',
   cooldownMs: 6500, allyShield: 480,
 };
+
+// ── Generals ──────────────────────────────────────────────────────────────────
+// A general opens the run alone, so each one carries its own sustain or safety net
+// on top of its damage — no healer exists yet to cover it.
+
+export const ROAR_OF_THE_SUN: Ability = {
+  id: 'roar_of_the_sun', name: 'Roar of the Sun', targetKind: 'boss',
+  cooldownMs: 7000, damage: 230, selfShield: 220,
+};
+
+export const MIST_DRAGON_SEAL: Ability = {
+  id: 'mist_dragon_seal', name: 'Mist Dragon Seal', targetKind: 'boss',
+  cooldownMs: 6500, damage: 190, buff: { target: 'self', durationMs: 6000, attackSpeedPct: 70 },
+};
+
+export const STARSTRIDE: Ability = {
+  id: 'starstride', name: 'Starstride', targetKind: 'boss',
+  cooldownMs: 8000, damage: 150, dot: { damage: 80, tickMs: 1000, durationMs: 6000 },
+};
+
+export const BLIGHT_CALL: Ability = {
+  id: 'blight_call', name: 'Blight Call', targetKind: 'boss',
+  cooldownMs: 8000, damage: 260, lifestealPct: 45,
+};
+
+export const IMMOLATIVE_MIGHT: Ability = {
+  id: 'immolative_might', name: 'Immolative Might', targetKind: 'boss',
+  cooldownMs: 9000, damage: 210, selfHeal: 140,
+  buff: { target: 'self', durationMs: 8000, attackPct: 35 },
+};
+
+export const WINTERS_WAKE: Ability = {
+  id: 'winters_wake', name: "Winter's Wake", targetKind: 'boss',
+  cooldownMs: 10000, damage: 200, bossStunMs: 1600, selfShield: 180,
+};
