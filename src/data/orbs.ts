@@ -2,7 +2,7 @@ import { ROSTER } from './heroes';
 import type { HeroDef, HeroRarity } from '../types';
 
 /** Fixed orb price. Gold is what a run pays out on top of exp. */
-export const ORB_PRICE = 500;
+export const ORB_PRICE = 5;
 
 /** Pull odds in percent: a tier is drawn first, then a hero uniformly inside it. */
 export const RARITY_WEIGHT: Record<HeroRarity, number> = { B: 70, A: 25, S: 5 };
