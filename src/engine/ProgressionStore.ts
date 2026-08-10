@@ -1,5 +1,7 @@
 import { DEFAULT_PARTY_IDS, ROSTER } from '../data/heroes';
-import { DUPE_EXP, ORB_PRICE, rollOrb, runGold } from '../data/orbs';
+import {
+  DUPE_EXP, ORB_PRICE, PRISMATIC_EXP_MULT, rollOrb, rollPrismatic, runGold,
+} from '../data/orbs';
 import { PASSIVE_LEVEL, STARTING_PROGRESS, addExp, applyProgress, runExp } from '../data/progression';
 import type { AccountState, HeroDef, HeroProgress, OrbPull } from '../types';
 
@@ -29,7 +31,7 @@ export interface ExpGain {
 function load(): AccountState {
   if (account) return account;
   // A fresh account owns the seven default picks — exactly one legal party.
-  account = { heroes: {}, owned: [...DEFAULT_PARTY_IDS], gold: 0 };
+  account = { heroes: {}, owned: [...DEFAULT_PARTY_IDS], prismatic: [], gold: 0 };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -38,6 +40,10 @@ function load(): AccountState {
       if (Array.isArray(parsed.owned)) {
         // Starters stay owned whatever the save says — the party must remain fieldable.
         for (const id of parsed.owned) if (typeof id === 'string') grant(id);
+      }
+      // Saves written before prismatics existed simply have none.
+      if (Array.isArray(parsed.prismatic)) {
+        for (const id of parsed.prismatic) if (typeof id === 'string') grantPrismatic(id);
       }
       if (typeof parsed.gold === 'number' && parsed.gold >= 0) account.gold = parsed.gold;
     } else {
@@ -60,6 +66,12 @@ function readHeroes(table: ProgressTable | undefined): void {
 /** Adds an id to the owned list, ignoring one already there. */
 function grant(heroId: string): void {
   if (!account!.owned.includes(heroId)) account!.owned.push(heroId);
+}
+
+/** Same, for the cosmetic variant. Owning a hero prismatic implies owning it at all. */
+function grantPrismatic(heroId: string): void {
+  grant(heroId);
+  if (!account!.prismatic.includes(heroId)) account!.prismatic.push(heroId);
 }
 
 function save(): void {
@@ -87,6 +99,11 @@ export function ownedRoster(): HeroDef[] {
 
 export function isOwned(heroId: string): boolean {
   return load().owned.includes(heroId);
+}
+
+/** Whether the hero's card draws the prismatic treatment. Cosmetic — never gates a pick. */
+export function isPrismatic(heroId: string): boolean {
+  return load().prismatic.includes(heroId);
 }
 
 export function ownedCount(): number {
@@ -137,8 +154,11 @@ export function grantRunGold(runLevel: number): number {
 
 /**
  * Spends one orb. Returns `undefined` when the purse is short — the shop gates the button
- * on `gold()`, so that is a guard, not a flow. A hero already owned pays `DUPE_EXP` to
- * itself instead of unlocking, which is why no pull is ever dead.
+ * on `gold()`, so that is a guard, not a flow. A pull that unlocks nothing pays `DUPE_EXP`
+ * to the hero it rolled instead, which is why no pull is ever dead.
+ *
+ * The prismatic coin is drawn on top of the hero: a prismatic pull unlocks the variant even
+ * for a hero already owned, so `duplicate` means "nothing new", not "hero already owned".
  */
 export function buyOrb(): OrbPull | undefined {
   const store = load();
@@ -146,16 +166,18 @@ export function buyOrb(): OrbPull | undefined {
   store.gold -= ORB_PRICE;
 
   const hero = rollOrb();
-  const duplicate = isOwned(hero.id);
-  if (!duplicate) {
-    grant(hero.id);
+  const prismatic = rollPrismatic();
+  const unlocks = prismatic ? !isPrismatic(hero.id) : !isOwned(hero.id);
+  if (unlocks) {
+    if (prismatic) grantPrismatic(hero.id);
+    else grant(hero.id);
     save();
-    return { hero, rarity: hero.rarity, duplicate: false, exp: 0 };
+    return { hero, rarity: hero.rarity, duplicate: false, exp: 0, prismatic };
   }
 
-  const exp = DUPE_EXP[hero.rarity];
+  const exp = DUPE_EXP[hero.rarity] * (prismatic ? PRISMATIC_EXP_MULT : 1);
   const progress = addExp(heroProgress(hero.id), exp);
   store.heroes[hero.id] = progress;
   save();
-  return { hero, rarity: hero.rarity, duplicate: true, exp, progress };
+  return { hero, rarity: hero.rarity, duplicate: true, exp, progress, prismatic };
 }

@@ -87,6 +87,8 @@ export interface HeroProgress {
 export interface AccountState {
   heroes: Record<string, HeroProgress>;
   owned: string[];
+  /** Heroes owned in their prismatic variant. Cosmetic only — never touches stats. */
+  prismatic: string[];
   gold: number;
 }
 
@@ -99,6 +101,8 @@ export interface OrbPull {
   exp: number;
   /** The duplicated hero's progress after the exp landed. Absent on a new hero. */
   progress?: HeroProgress;
+  /** The pull rolled the prismatic variant — pure cosmetic, and it doubles duplicate exp. */
+  prismatic: boolean;
 }
 
 /**

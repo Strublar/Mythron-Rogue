@@ -1,11 +1,15 @@
 import Phaser from 'phaser';
-import { ORB_PRICE, RARITY_COLOR, RARITY_LABEL, RARITY_ORDER, RARITY_WEIGHT } from '../../data/orbs';
+import {
+  ORB_PRICE, PRISMATIC_CHANCE, RARITY_COLOR, RARITY_LABEL, RARITY_ORDER, RARITY_WEIGHT,
+} from '../../data/orbs';
 import { buyOrb, gold, ownedCount } from '../../engine/ProgressionStore';
 import { ROSTER } from '../../data/heroes';
 import { MAX_HERO_LEVEL } from '../../data/progression';
 import type { OrbPull } from '../../types';
 import { createUnitPortrait } from '../UnitAnimator';
 import { ButtonHandle, createButton, drawSceneBackground, sceneLabel } from '../ui';
+import { PRISMATIC_WHITE, prismaticSwirl } from '../PrismaticFx';
+import { prismaticBurst } from '../PrismaticBurst';
 import { GAME_HEIGHT, GAME_WIDTH } from '../layout';
 
 const PANEL = { x: GAME_WIDTH / 2, y: 500, w: 560, h: 520 };
@@ -59,10 +63,11 @@ export class ShopScene extends Phaser.Scene {
 
   /** "S 5%  ·  A 25%  ·  B 70%" — best tier first, the way a player reads odds. */
   private oddsLine(): string {
-    return [...RARITY_ORDER]
+    const tiers = [...RARITY_ORDER]
       .reverse()
-      .map(r => `${r} ${RARITY_WEIGHT[r]}%`)
-      .join('  ·  ');
+      .map(r => `${r} ${RARITY_WEIGHT[r]}%`);
+    // The prismatic coin is drawn on top of the tier, so it reads as its own line item.
+    return [...tiers, `PRISMATIC ${PRISMATIC_CHANCE * 100}%`].join('  ·  ');
   }
 
   private refreshHeader(): void {
@@ -114,6 +119,15 @@ export class ShopScene extends Phaser.Scene {
     const accent = RARITY_COLOR[pull.rarity];
     const top = PANEL.y - PANEL.h / 2;
 
+    // Both prismatic layers go down before the reveal itself, so the hero stays legible on
+    // top of them rather than being flooded by the rays.
+    if (pull.prismatic) {
+      this.panelObjects.push(
+        prismaticSwirl(this, PANEL.x, PANEL.y, PANEL.w - 4, PANEL.h - 4, 0),
+        ...prismaticBurst(this, PANEL.x, top + 250, 0),
+      );
+    }
+
     const tier = sceneLabel(
       this, PANEL.x, top + 44, `${pull.rarity}  ·  ${RARITY_LABEL[pull.rarity]}`, 26, hexColor(accent), 'bold',
     );
@@ -136,15 +150,24 @@ export class ShopScene extends Phaser.Scene {
     this.tweens.add({ targets: halo, scale: 1, duration: 260, ease: 'Back.easeOut' });
   }
 
-  /** The headline: a new hero, or the exp a duplicate paid instead. */
+  /** The headline: what the pull unlocked, or the exp it paid instead. */
   private verdict(pull: OrbPull): [string, number, string, string] {
-    return pull.duplicate
-      ? [`DUPLICATE  ·  +${pull.exp} EXP`, 24, '#7fd4ff', 'bold']
+    if (pull.duplicate) {
+      return pull.prismatic
+        ? [`PRISMATIC DUPE  ·  +${pull.exp} EXP`, 22, PRISMATIC_WHITE, 'bold']
+        : [`DUPLICATE  ·  +${pull.exp} EXP`, 24, '#7fd4ff', 'bold'];
+    }
+    return pull.prismatic
+      ? ['PRISMATIC!', 30, PRISMATIC_WHITE, 'bold']
       : ['NEW HERO!', 30, '#8ef2a0', 'bold'];
   }
 
   private detailLine(pull: OrbPull): string {
-    if (!pull.duplicate) return 'Added to your collection — pick it on the next run';
+    if (!pull.duplicate) {
+      return pull.prismatic
+        ? `Foil ${pull.hero.name} unlocked — its card shimmers from now on`
+        : 'Added to your collection — pick it on the next run';
+    }
     const p = pull.progress;
     if (!p) return '';
     return p.level >= MAX_HERO_LEVEL

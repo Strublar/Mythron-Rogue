@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { TAG_LABEL, defaultParty, heroesByRole, partyTags } from '../../data/heroes';
-import { ownedRoster } from '../../engine/ProgressionStore';
+import { isPrismatic, ownedRoster } from '../../engine/ProgressionStore';
 import type { HeroDef, HeroRole } from '../../types';
 import { createUnitSprite } from '../UnitAnimator';
 import { createHeroCard } from '../HeroCard';
@@ -162,6 +162,7 @@ export class CharacterSelectScene extends Phaser.Scene {
       createHeroCard(this, x, y, GRID.cardW, GRID.cardH, hero, {
         taken: fielded.has(hero.id) && hero.id !== current.id,
         current: hero.id === current.id,
+        prismatic: isPrismatic(hero.id),
         onPressStart: (h, hx, hy) => this.beginPress(h, hx, hy),
         onPressCancel: () => this.inspector.cancel(),
         onTap: picked => { if (this.wasTap()) this.assign(role, index, picked); },
