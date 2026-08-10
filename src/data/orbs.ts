@@ -19,7 +19,7 @@ export const RARITY_COLOR: Record<HeroRarity, number> = {
 export const DUPE_EXP: Record<HeroRarity, number> = { B: 20, A: 50, S: 120 };
 
 /** Odds any pull comes out prismatic, rolled independently of the rarity tier. */
-export const PRISMATIC_CHANCE = 0.1;
+export const PRISMATIC_CHANCE = 0.5;
 
 /** A prismatic duplicate is still a win — it pays this multiple of the normal dupe exp. */
 export const PRISMATIC_EXP_MULT = 2;
