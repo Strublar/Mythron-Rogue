@@ -1,4 +1,4 @@
-// Percent math shared by boons (permanent, baked into HeroDef) and buffs (temporary,
+// Percent math shared by levels (permanent, baked into HeroDef) and buffs (temporary,
 // applied at tick time). One formula, two callers — keep them in sync here.
 
 import type { BoonEffect, HeroDef } from '../types';
@@ -16,7 +16,7 @@ export function haste(ms: number, pct: number): number {
 
 /**
  * Applies one collapsed `BoonEffect` to a def, ability payloads included. The single
- * place stat percentages meet a hero: boons collapse their stacks into one effect,
+ * place stat percentages meet a hero: levels collapse their growth into one effect,
  * progression collapses its per-level growth into another. Never mutates `def`.
  */
 export function growHero(def: HeroDef, e: BoonEffect): HeroDef {

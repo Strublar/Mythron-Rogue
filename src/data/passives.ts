@@ -1,7 +1,7 @@
 import type { HeroPassive } from '../types';
 
 /**
- * One passive per hero, unlocked at PASSIVE_LEVEL. Same trigger machinery as boons, but
+ * One passive per hero, unlocked at PASSIVE_LEVEL. Rides the engine's trigger machinery,
  * owner-scoped: only the owner's events wake it, and a `'scope'` target means the owner
  * alone. `text` is hand-written — a passive is identity, not a stat line.
  */

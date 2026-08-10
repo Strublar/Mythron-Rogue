@@ -1,14 +1,14 @@
 import Phaser from 'phaser';
 import type { HeroDef, HeroProgress } from '../types';
 import { tagStrip } from '../data/heroes';
-import { MAX_HERO_LEVEL, expToNext } from '../data/progression';
+import { MAX_HERO_LEVEL } from '../data/progression';
 import { createUnitPortrait } from './UnitAnimator';
-import { BOON_CREAM, BOON_GOLD, BOON_MUTED } from './BoonCard';
+import { drawExpBar } from './ExpBar';
 import { heroLevel } from './HeroTooltip';
+import { UI_CREAM, UI_GOLD, UI_MUTED } from './ui';
 import { ROLE_COLOR } from './layout';
 
 const PAD = 8;
-const EXP_BAR_H = 6;
 /** Bar plus its caption — how much the text block lifts when an exp bar is drawn. */
 const EXP_ROW_H = 22;
 /** Portrait scale — the grid is dense, so cards run smaller than the battlefield. */
@@ -62,23 +62,23 @@ export function createHeroCard(
   const lift = opts.progress ? EXP_ROW_H : 0;
   const label = scene.add
     .text(x, y + h / 2 - PAD - 52 - lift, hero.name.toUpperCase(), {
-      fontFamily: 'Lato', fontSize: '14px', color: BOON_GOLD, fontStyle: 'bold',
+      fontFamily: 'Lato', fontSize: '14px', color: UI_GOLD, fontStyle: 'bold',
       align: 'center', wordWrap: { width: w - PAD * 2 },
     })
     .setOrigin(0.5, 0)
     .setDepth(depth + 1);
 
-  // Tags decide which boons the party draws, so they sit on the card, not just the popup.
+  // Tags are hero identity, so they sit on the card, not just the popup.
   scene.add
     .text(x, y + h / 2 - PAD - 33 - lift, tagStrip(hero), {
-      fontFamily: 'Lato', fontSize: '12px', color: BOON_MUTED, fontStyle: 'bold',
+      fontFamily: 'Lato', fontSize: '12px', color: UI_MUTED, fontStyle: 'bold',
     })
     .setOrigin(0.5, 0)
     .setDepth(depth + 1);
 
   scene.add
     .text(x, y + h / 2 - PAD - 14 - lift, statStrip(hero), {
-      fontFamily: 'Lato', fontSize: '13px', color: BOON_CREAM,
+      fontFamily: 'Lato', fontSize: '13px', color: UI_CREAM,
     })
     .setOrigin(0.5, 0)
     .setDepth(depth + 1);
@@ -92,7 +92,7 @@ export function createHeroCard(
   if (hero.passive) {
     scene.add
       .text(x + w / 2 - PAD, y - h / 2 + PAD, '★', {
-        fontFamily: 'Lato', fontSize: '18px', color: BOON_GOLD,
+        fontFamily: 'Lato', fontSize: '18px', color: UI_GOLD,
       })
       .setOrigin(1, 0)
       .setDepth(depth + 2);
@@ -104,7 +104,7 @@ export function createHeroCard(
     bg.setFillStyle(0x0b0d18, 0.95);
     scene.add
       .text(x, y - h / 2 + PAD, 'IN PARTY', {
-        fontFamily: 'Lato', fontSize: '12px', color: BOON_MUTED, fontStyle: 'bold',
+        fontFamily: 'Lato', fontSize: '12px', color: UI_MUTED, fontStyle: 'bold',
       })
       .setOrigin(0.5, 0)
       .setDepth(depth + 2);
@@ -132,28 +132,9 @@ function drawLevelBadge(
 ): void {
   scene.add
     .text(x, y, level >= MAX_HERO_LEVEL ? 'MAX' : `LVL ${level}`, {
-      fontFamily: 'Lato', fontSize: '14px', color: BOON_GOLD, fontStyle: 'bold',
+      fontFamily: 'Lato', fontSize: '14px', color: UI_GOLD, fontStyle: 'bold',
     })
     .setOrigin(0, 0)
-    .setDepth(depth);
-}
-
-/** Progress toward the next level. A maxed hero gets a full bar and no numbers. */
-function drawExpBar(
-  scene: Phaser.Scene, x: number, y: number, w: number, p: HeroProgress, depth: number,
-): void {
-  const need = expToNext(p.level);
-  const ratio = need === 0 ? 1 : Phaser.Math.Clamp(p.exp / need, 0, 1);
-  scene.add.rectangle(x, y, w, EXP_BAR_H, 0x000000, 0.55).setDepth(depth);
-  scene.add
-    .rectangle(x - w / 2, y, w * ratio, EXP_BAR_H, need === 0 ? 0xffd76b : 0x7fd4ff, 0.9)
-    .setOrigin(0, 0.5)
-    .setDepth(depth + 1);
-  scene.add
-    .text(x, y + EXP_BAR_H, need === 0 ? 'MAX LEVEL' : `${p.exp} / ${need} EXP`, {
-      fontFamily: 'Lato', fontSize: '11px', color: BOON_MUTED,
-    })
-    .setOrigin(0.5, 0)
     .setDepth(depth);
 }
 

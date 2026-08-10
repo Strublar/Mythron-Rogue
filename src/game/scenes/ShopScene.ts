@@ -23,7 +23,7 @@ const REVEAL_MAX_H = 300;
 const hexColor = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
 
 /**
- * Between-run shop: gold buys orbs, an orb rolls one hero weighted by rarity. A hero
+ * Shop: gold buys orbs, an orb rolls one hero weighted by rarity. A hero
  * already owned pays exp to itself instead, so a full collection keeps orbs worth buying.
  * The store owns the roll and the persistence — this scene only draws the result.
  */
@@ -144,7 +144,7 @@ export class ShopScene extends Phaser.Scene {
   }
 
   private detailLine(pull: OrbPull): string {
-    if (!pull.duplicate) return 'Added to your collection — pick it on the next run';
+    if (!pull.duplicate) return 'Added to your collection — field it from the roster screen';
     const p = pull.progress;
     if (!p) return '';
     return p.level >= MAX_HERO_LEVEL

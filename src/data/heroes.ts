@@ -66,7 +66,7 @@ export const ROSTER: HeroDef[] = [
     role: 'heal', tags: ['mercenary', 'golem'], maxHp: 440, attack: 28, attackIntervalMs: 1500, ability: SHIELD_ORACLE },
 ];
 
-/** Singular tag name, unlike the plural boon-scope label. */
+/** Display name of a tag, used by every card and stats popup. */
 export const TAG_LABEL: Record<HeroTag, string> = {
   lyonar: 'Lyonar', songhai: 'Songhai', vetruvian: 'Vetruvian', abyssian: 'Abyssian',
   magmar: 'Magmar', vanar: 'Vanar', mercenary: 'Mercenary',
@@ -76,17 +76,6 @@ export const TAG_LABEL: Record<HeroTag, string> = {
 /** A hero's tags on one line — the same strip on the roster card and the stats popup. */
 export function tagStrip(hero: HeroDef): string {
   return hero.tags.map(t => TAG_LABEL[t].toUpperCase()).join(' · ');
-}
-
-/** Tag counts across a party, biggest first: what the boon rolls are weighted by. */
-export function partyTags(party: HeroDef[]): { tag: HeroTag; count: number }[] {
-  const counts = new Map<HeroTag, number>();
-  for (const hero of party) {
-    for (const tag of hero.tags) counts.set(tag, (counts.get(tag) ?? 0) + 1);
-  }
-  return [...counts]
-    .map(([tag, count]) => ({ tag, count }))
-    .sort((a, b) => b.count - a.count);
 }
 
 /** `roster` defaults to the raw entries; screens pass the progression-leveled roster. */

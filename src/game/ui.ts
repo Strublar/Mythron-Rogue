@@ -1,6 +1,11 @@
 import Phaser from 'phaser';
 import { GAME_HEIGHT, GAME_WIDTH } from './layout';
 
+/** The three text colours every card and panel is written in. */
+export const UI_GOLD = '#ffd76b';
+export const UI_CREAM = '#f3e6c8';
+export const UI_MUTED = '#9aa3b8';
+
 /** The dimmed battlefield backdrop every between-run screen sits on. */
 export function drawSceneBackground(scene: Phaser.Scene): void {
   for (const key of ['combat_bg', 'combat_mid']) {
@@ -29,7 +34,7 @@ export function sceneLabel(
 }
 
 export interface ButtonHandle {
-  /** Disabled buttons dim and stop taking presses — used for "pick a boon first". */
+  /** Disabled buttons dim and stop taking presses. */
   setEnabled(on: boolean): void;
 }
 

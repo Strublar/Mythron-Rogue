@@ -1,42 +1,35 @@
 import Phaser from 'phaser';
-import { bossForLevel } from '../../data/bosses';
 import { FightEngine } from '../../engine/FightEngine';
-import type { ExpGain } from '../../engine/ProgressionStore';
-import { grantRunExp, grantRunGold } from '../../engine/ProgressionStore';
-import { RunState } from '../../engine/RunState';
-import type { FightEvent, HeroDef } from '../../types';
+import { grantEncounterRewards } from '../../engine/ProgressionStore';
+import type { EncounterDef, FightEvent, HeroDef } from '../../types';
 import { CombatantView } from '../CombatantView';
 import { DragCastController } from '../DragCastController';
 import { HeroInspector } from '../HeroInspector';
-import { createButton } from '../ui';
-import type { InterludeData } from './InterludeScene';
+import type { ResultData } from './ResultScene';
 import {
   BOSS_ANCHOR, BOSS_BAR_Y, BOSS_GROUND_Y, BOSS_SCALE, GAME_HEIGHT, GAME_WIDTH,
   HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, ROLE_COLOR, withSlots,
 } from '../layout';
 
-/** Pause between a boss dying and the between-fights screen opening. */
-const NEXT_BOSS_DELAY_MS = 1400;
+/** Pause between the last blow landing and the result screen opening. */
+const RESULT_DELAY_MS = 1400;
 
-/** The party built on the selection screen — the only thing the fight needs to start. */
+/** One encounter fought by the saved roster — everything the fight needs to start. */
 export interface BossFightData {
   party: HeroDef[];
+  encounter: EncounterDef;
 }
 
 export class BossFightScene extends Phaser.Scene {
   private engine!: FightEngine;
-  private run!: RunState;
+  private encounter!: EncounterDef;
   private party!: HeroDef[];
   private bossView!: CombatantView;
   private heroViews!: Map<string, CombatantView>;
   private dragCast!: DragCastController;
   private inspector!: HeroInspector;
-  private bossNameText!: Phaser.GameObjects.Text;
-  private levelText!: Phaser.GameObjects.Text;
   private startHint!: Phaser.GameObjects.Text;
   private ended = false;
-  /** True while the between-fights screen is up: the sim stops, the sprites keep idling. */
-  private frozen = false;
 
   constructor() {
     super({ key: 'BossFightScene' });
@@ -44,20 +37,18 @@ export class BossFightScene extends Phaser.Scene {
 
   init(data: BossFightData): void {
     this.party = data.party;
+    this.encounter = data.encounter;
   }
 
   create(): void {
     this.ended = false;
-    this.frozen = false;
     this.drawBackground();
 
-    // Each entry into the scene is a brand new run: boons do not carry over.
-    this.run = new RunState(this.party);
-    const firstBoss = bossForLevel(1);
-    this.engine = new FightEngine(this.run.heroDefs(), firstBoss);
+    const boss = this.encounter.boss;
+    this.engine = new FightEngine(this.party, boss, this.encounter.index);
 
     this.bossView = new CombatantView(this, {
-      unitKey: firstBoss.unitKey,
+      unitKey: boss.unitKey,
       x: BOSS_ANCHOR.x,
       y: BOSS_ANCHOR.y,
       scale: BOSS_SCALE,
@@ -68,21 +59,22 @@ export class BossFightScene extends Phaser.Scene {
       barFill: 0xd7443e,
       barText: true,
     });
-    this.bossNameText = this.add
-      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 34, firstBoss.name.toUpperCase(), {
+    // Boss name and encounter number never change inside a fight — draw them once.
+    this.add
+      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 34, boss.name.toUpperCase(), {
         fontFamily: 'Lato', fontSize: '28px', color: '#f3e6c8', fontStyle: 'bold',
         stroke: '#000000', strokeThickness: 4,
       })
       .setOrigin(0.5);
-    this.levelText = this.add
-      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 66, 'LEVEL 1', {
+    this.add
+      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 66, `ENCOUNTER ${this.encounter.index}`, {
         fontFamily: 'Lato', fontSize: '20px', color: '#ffd76b', fontStyle: 'bold',
         stroke: '#000000', strokeThickness: 4,
       })
       .setOrigin(0.5);
 
     this.heroViews = new Map();
-    const placed = withSlots(this.run.heroDefs());
+    const placed = withSlots(this.party);
     for (const { def, slot } of placed) {
       this.heroViews.set(def.id, new CombatantView(this, {
         unitKey: def.unitKey,
@@ -103,6 +95,7 @@ export class BossFightScene extends Phaser.Scene {
     this.buildInspector(placed);
     this.engine.on('fight', (e: FightEvent) => this.onFightEvent(e));
     this.refreshViews();
+    this.announceEncounter(this.encounter.index);
   }
 
   /**
@@ -118,7 +111,7 @@ export class BossFightScene extends Phaser.Scene {
       const view = this.heroViews.get(def.id);
       if (!view) continue;
       view.sprite.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-        // Read the live def: boons swap it in on every new boss.
+        // Read the def the engine holds — it is the one the fight resolves against.
         const current = this.engine.hero(def.id)?.def ?? def;
         this.inspector.press(current, slot.x, slot.y);
       });
@@ -161,9 +154,6 @@ export class BossFightScene extends Phaser.Scene {
     const heroView = e.heroId ? this.heroViews.get(e.heroId) : undefined;
 
     switch (e.type) {
-      case 'boss_spawn':
-        this.onBossSpawn();
-        break;
       case 'fight_start':
         this.startHint.setVisible(false);
         // Once blades are out, hero pointer-down belongs to drag-cast alone.
@@ -205,64 +195,43 @@ export class BossFightScene extends Phaser.Scene {
         heroView?.playDeath();
         break;
       case 'end':
-        this.dragCast.cancel();
-        // A cleared boss only ends the *fight*; the run continues one level deeper.
-        if (e.outcome === 'victory') {
-          this.bossView.playDeath();
-          this.time.delayedCall(NEXT_BOSS_DELAY_MS, () => this.openInterlude());
-        } else {
-          this.showRunOverOverlay(e.level ?? this.engine.level);
-        }
+        this.endEncounter(e.outcome === 'victory');
         break;
     }
   }
 
   /**
-   * Stops the sim behind the between-fights screen without pausing the scene — a paused
-   * scene freezes its UpdateList, and the party should keep idling under the boon window.
-   * Input goes off instead, so drag-casts cannot fire and pointers reach the interlude only.
+   * Freezes the fight and hands over to the result screen. A win pays out first — the store
+   * is the only writer, and the screen animates what it returns. A loss pays nothing.
    */
-  private openInterlude(): void {
+  private endEncounter(victory: boolean): void {
     if (this.ended) return;
-    this.frozen = true;
-    this.input.enabled = false;
-    // Input goes dead here, so anything still in flight would never see its pointer-up.
+    this.ended = true;
     this.dragCast.cancel();
     this.inspector.cancel();
-    const data: InterludeData = {
-      clearedLevel: this.engine.level,
-      run: this.run,
-      onDone: () => this.resumeRun(),
-    };
-    this.scene.launch('InterludeScene', data);
+    this.input.enabled = false;
+    if (victory) this.bossView.playDeath();
+
+    const reward = victory
+      ? grantEncounterRewards(this.party, this.encounter)
+      : { gains: [], gold: 0, unlocked: false };
+
+    this.time.delayedCall(RESULT_DELAY_MS, () => {
+      const data: ResultData = {
+        victory,
+        encounter: this.encounter,
+        party: this.party,
+        gains: reward.gains,
+        gold: reward.gold,
+        unlocked: reward.unlocked,
+      };
+      this.scene.start('ResultScene', data);
+    });
   }
 
-  private resumeRun(): void {
-    if (this.ended) return;
-    this.frozen = false;
-    this.input.enabled = true;
-    // Stat boons ride in the defs; trigger boons need the engine to hold them.
-    this.engine.setBoons(this.run.boons);
-    this.engine.startNextBoss(bossForLevel(this.engine.level + 1), this.run.heroDefs());
-  }
-
-  /** Resets every bar and sprite for the freshly spawned boss and the restored party. */
-  private onBossSpawn(): void {
-    const { level, boss } = this.engine;
-    this.bossNameText.setText(boss.def.name.toUpperCase());
-    this.levelText.setText(`LEVEL ${level}`);
-    this.bossView.revive();
-    for (const view of this.heroViews.values()) view.revive();
-    this.startHint.setVisible(true);
-    // A fresh boss re-opens the idle window: stats are inspectable again.
-    this.inspector.enabled = true;
-    this.refreshViews();
-    this.announceLevel(level);
-  }
-
-  private announceLevel(level: number): void {
+  private announceEncounter(index: number): void {
     const banner = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `LEVEL ${level}`, {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `ENCOUNTER ${index}`, {
         fontFamily: 'Lato', fontSize: '72px', fontStyle: 'bold', color: '#ffd76b',
         stroke: '#000000', strokeThickness: 6,
       })
@@ -279,7 +248,7 @@ export class BossFightScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (!this.ended && !this.frozen) this.engine.tick(delta);
+    if (!this.ended) this.engine.tick(delta);
     this.refreshViews();
     this.dragCast.refresh(delta, this.input.activePointer);
   }
@@ -298,83 +267,5 @@ export class BossFightScene extends Phaser.Scene {
       );
       if (h.alive) view.setThreat(maxThreat > 0 ? h.threat / maxThreat : 0, h.def.id === topThreatId);
     }
-  }
-
-  private showRunOverOverlay(highestLevel: number): void {
-    this.ended = true;
-    // The run is over: the party banks its exp and gold before the screen even draws.
-    const gains = grantRunExp(this.party, highestLevel);
-    const earnedGold = grantRunGold(highestLevel);
-    const depth = 200;
-    this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setDepth(depth);
-    this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, 'RUN OVER', {
-        fontFamily: 'Lato', fontSize: '64px', fontStyle: 'bold', color: '#ff8a80',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-    this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, 'HIGHEST LEVEL', {
-        fontFamily: 'Lato', fontSize: '24px', color: '#f3e6c8',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-    this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 10, `${highestLevel}`, {
-        fontFamily: 'Lato', fontSize: '72px', fontStyle: 'bold', color: '#ffd76b',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-
-    const reportBottom = this.drawExpReport(gains, earnedGold, GAME_HEIGHT / 2 + 60, depth);
-
-    // A new run means a new party — back to the selection screen, not a blind restart.
-    createButton(
-      this, GAME_WIDTH / 2, reportBottom + 80, 'RETRY',
-      () => this.scene.start('CharacterSelectScene'), depth,
-    );
-  }
-
-  /**
-   * What the run paid: flat exp for everyone, gold for the purse, then whoever leveled.
-   * Returns its bottom so the RETRY button can sit under it.
-   */
-  private drawExpReport(gains: ExpGain[], earnedGold: number, y: number, depth: number): number {
-    const earned = gains[0]?.exp ?? 0;
-    this.add
-      .text(GAME_WIDTH / 2, y, `+${earned} EXP TO EACH HERO`, {
-        fontFamily: 'Lato', fontSize: '26px', fontStyle: 'bold', color: '#7fd4ff',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-
-    // Gold is account-wide, not per hero — it buys orbs in the shop between runs.
-    this.add
-      .text(GAME_WIDTH / 2, y + 38, `+${earnedGold} GOLD`, {
-        fontFamily: 'Lato', fontSize: '26px', fontStyle: 'bold', color: '#ffd76b',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-
-    const levelled = gains.filter(g => g.after.level > g.before.level);
-    if (levelled.length === 0) return y + 38;
-
-    this.add
-      .text(GAME_WIDTH / 2, y + 82, 'LEVEL UP', {
-        fontFamily: 'Lato', fontSize: '22px', fontStyle: 'bold', color: '#ffd76b',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-
-    levelled.forEach((g, i) => {
-      const unlock = g.unlockedPassive ? '  ·  PASSIVE UNLOCKED' : '';
-      this.add
-        .text(GAME_WIDTH / 2, y + 114 + i * 26, `${g.name.toUpperCase()}  →  LVL ${g.after.level}${unlock}`, {
-          fontFamily: 'Lato', fontSize: '18px', color: g.unlockedPassive ? '#ffd76b' : '#f3e6c8',
-        })
-        .setOrigin(0.5)
-        .setDepth(depth);
-    });
-    return y + 114 + (levelled.length - 1) * 26;
   }
 }

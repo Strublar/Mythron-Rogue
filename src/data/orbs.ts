@@ -1,7 +1,7 @@
 import { ROSTER } from './heroes';
 import type { HeroDef, HeroRarity } from '../types';
 
-/** Fixed orb price. Gold is what a run pays out on top of exp. */
+/** Fixed orb price. Gold is what an encounter pays out on top of exp. */
 export const ORB_PRICE = 500;
 
 /** Pull odds in percent: a tier is drawn first, then a hero uniformly inside it. */
@@ -21,18 +21,14 @@ export const DUPE_EXP: Record<HeroRarity, number> = { B: 20, A: 50, S: 120 };
 /** Ascending, so the reveal and the odds list read in the same order everywhere. */
 export const RARITY_ORDER: HeroRarity[] = ['B', 'A', 'S'];
 
-/** A run pays this much for its first boss, before any level is cleared. */
+/** What the first encounter of the chain pays. */
 const GOLD_BASE = 25;
-/** Each cleared level pays GOLD_PER_LEVEL × its depth — later bosses are worth more. */
-const GOLD_PER_LEVEL = 10;
+/** Each step up the chain pays this much more — later bosses are worth more. */
+const GOLD_PER_STEP = 10;
 
-/**
- * Gold a run that reached `runLevel` banks. `runLevel` is the boss it died on, so it
- * cleared `runLevel - 1` of them; the payout is the triangular sum over those depths.
- */
-export function runGold(runLevel: number): number {
-  const cleared = Math.max(0, runLevel - 1);
-  return GOLD_BASE + (GOLD_PER_LEVEL * cleared * (cleared + 1)) / 2;
+/** Gold one cleared encounter banks. */
+export function encounterGold(index: number): number {
+  return GOLD_BASE + GOLD_PER_STEP * Math.max(0, index - 1);
 }
 
 export function heroesByRarity(rarity: HeroRarity): HeroDef[] {

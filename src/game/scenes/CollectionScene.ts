@@ -22,7 +22,7 @@ const BACK_BUTTON_Y = GAME_HEIGHT - 70;
 const hexColor = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
 
 /**
- * Between-runs collection: every hero in the roster with the level and exp it has earned.
+ * Collection: every hero in the roster with the level and exp it has earned.
  * One role at a time (a 9-hero row set is the tallest), holding a card opens its full
  * stats card — the same one the fight screens use, so passives read identically.
  */
@@ -53,7 +53,7 @@ export class CollectionScene extends Phaser.Scene {
       `Hold a hero for its stats · passive unlocks at level ${PASSIVE_LEVEL} · max ${MAX_HERO_LEVEL}`,
       16, '#9aa3b8',
     );
-    this.label(GAME_WIDTH / 2, 138, 'Heroes earn exp from every run they are fielded in', 16, '#9aa3b8');
+    this.label(GAME_WIDTH / 2, 138, 'Heroes earn exp from every encounter they are fielded in', 16, '#9aa3b8');
 
     this.inspector = new HeroInspector(this);
     this.drawTabs();
@@ -108,7 +108,7 @@ export class CollectionScene extends Phaser.Scene {
         progress: heroProgress(hero.id),
         onPressStart: (h, hx, hy) => this.inspector.press(h, hx, hy),
         onPressCancel: () => this.inspector.cancel(),
-        // Tapping a card only inspects here — nothing to pick outside a run.
+        // Tapping a card only inspects here — the roster screen is where picks happen.
         onTap: () => this.inspector.cancel(),
       });
     });
