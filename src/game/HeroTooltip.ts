@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import type { Ability, AbilityBuff, HeroDef, HeroRole } from '../types';
 import { tagStrip } from '../data/heroes';
 import { PASSIVE_LEVEL, passiveOf } from '../data/progression';
+import { BASE_POWER, scaleByPower } from '../data/statMath';
 import { GAME_HEIGHT, GAME_WIDTH, ROLE_COLOR } from './layout';
+import { STAT_COLOR, heroStatRows, type StatRow } from './statDisplay';
 
 const PANEL_W = 420;
 const PAD = 20;
@@ -12,6 +14,8 @@ const MARGIN = 14;
 const ANCHOR_GAP = 80;
 const CARET_W = 24;
 const CARET_H = 14;
+/** One stat cell: label line over value line, plus breathing room. */
+const STAT_CELL_H = 44;
 
 const ROLE_LABEL: Record<HeroRole, string> = { tank: 'TANK', dps: 'DPS', heal: 'HEALER' };
 const CREAM = '#f3e6c8';
@@ -31,25 +35,30 @@ const BUFF_TARGET_LABEL: Record<AbilityBuff['target'], string> = {
   party: 'the whole party',
 };
 
-/** Effect lines built straight from an ability's numeric fields — no hardcoded copy. */
-export function abilityEffects(a: Ability): string[] {
+/**
+ * Effect lines built straight from an ability's numeric fields — no hardcoded copy.
+ * Payloads are written at BASE_POWER, so the caster's `power` is folded in here: the card
+ * prints what the cast will actually land for.
+ */
+export function abilityEffects(a: Ability, power = BASE_POWER): string[] {
+  const p = (amount: number): number => scaleByPower(amount, power);
   const lines: string[] = [];
-  if (a.damage) lines.push(`Deals ${a.damage} damage to the boss.`);
+  if (a.damage) lines.push(`Deals ${p(a.damage)} damage to the boss.`);
   if (a.executeBonus && a.executeBelowPct !== undefined) {
-    lines.push(`Execute: +${a.executeBonus} damage while the boss is below ${a.executeBelowPct}% HP.`);
+    lines.push(`Execute: +${p(a.executeBonus)} damage while the boss is below ${a.executeBelowPct}% HP.`);
   }
   if (a.dot) {
     lines.push(
-      `Burns the boss for ${a.dot.damage} every ${secs(a.dot.tickMs)} over ${secs(a.dot.durationMs)}.`,
+      `Burns the boss for ${p(a.dot.damage)} every ${secs(a.dot.tickMs)} over ${secs(a.dot.durationMs)}.`,
     );
   }
   if (a.lifestealPct) lines.push(`Heals the caster for ${a.lifestealPct}% of the damage dealt.`);
   if (a.bossStunMs) lines.push(`Staggers the boss, delaying its next swing by ${secs(a.bossStunMs)}.`);
-  if (a.heal) lines.push(`Heals the target ally for ${a.heal}.`);
-  if (a.partyHeal) lines.push(`Heals every living hero for ${a.partyHeal}.`);
-  if (a.selfHeal) lines.push(`Heals the caster for ${a.selfHeal}.`);
-  if (a.selfShield) lines.push(`Shields the caster for ${a.selfShield}.`);
-  if (a.allyShield) lines.push(`Shields the target ally for ${a.allyShield}.`);
+  if (a.heal) lines.push(`Heals the target ally for ${p(a.heal)}.`);
+  if (a.partyHeal) lines.push(`Heals every living hero for ${p(a.partyHeal)}.`);
+  if (a.selfHeal) lines.push(`Heals the caster for ${p(a.selfHeal)}.`);
+  if (a.selfShield) lines.push(`Shields the caster for ${p(a.selfShield)}.`);
+  if (a.allyShield) lines.push(`Shields the target ally for ${p(a.allyShield)}.`);
   if (a.buff) {
     const parts: string[] = [];
     if (a.buff.attackPct) parts.push(`+${a.buff.attackPct}% attack`);
@@ -85,8 +94,6 @@ export class HeroTooltip {
     for (const child of this.root.list.slice(1)) child.destroy();
 
     const accent = hex(ROLE_COLOR[hero.role]);
-    const isHealer = hero.role === 'heal';
-    const perSec = hero.attack / (hero.attackIntervalMs / 1000);
 
     let y = PAD;
     // Level sits on the name line: it is what every number under it was grown by.
@@ -96,16 +103,14 @@ export class HeroTooltip {
     y = this.line(tagStrip(hero), 15, GOLD, y) + GAP;
     y = this.rule(y);
 
-    y = this.stat('HP', hero.maxHp.toLocaleString(), y);
-    y = this.stat(isHealer ? 'HEAL' : 'ATTACK', `${hero.attack}`, y);
-    y = this.stat('EVERY', secs(hero.attackIntervalMs), y);
-    y = this.stat(isHealer ? 'HPS' : 'DPS', perSec.toFixed(1), y) + GAP;
+    y = this.statGrid(hero, y) + GAP;
     y = this.rule(y);
 
     y = this.passiveBlock(hero, y);
 
     const { ability } = hero;
-    this.right(`${secs(ability.cooldownMs)} CD`, 16, MUTED, y + 6);
+    // Mana replaces the old cooldown badge: what the cast costs out of the bar under the hero.
+    this.right(`${ability.manaCost} MANA`, 16, STAT_COLOR.mana, y + 6);
     y = this.line(ability.name.toUpperCase(), 22, GOLD, y, 'bold');
     y = this.line(
       ability.targetKind === 'boss' ? 'Drag onto the boss.' : 'Drag onto an ally.',
@@ -113,7 +118,7 @@ export class HeroTooltip {
       MUTED,
       y,
     ) + GAP;
-    for (const effect of abilityEffects(ability)) y = this.line(effect, 18, CREAM, y);
+    for (const effect of abilityEffects(ability, hero.power)) y = this.line(effect, 18, CREAM, y);
 
     const height = y + PAD - GAP;
     this.bg.setSize(PANEL_W, height);
@@ -182,9 +187,38 @@ export class HeroTooltip {
     );
   }
 
-  private stat(label: string, value: string, y: number): number {
-    this.right(value, 20, CREAM, y);
-    return this.line(label, 20, MUTED, y);
+  /**
+   * The stat block, two cells per row, each one colour-coded by stat — the whole point of
+   * the card is that hp reads green and power reads violet before a word is read.
+   */
+  private statGrid(hero: HeroDef, y: number): number {
+    const rows = heroStatRows(hero);
+    const colW = (PANEL_W - PAD * 2) / 2;
+    let top = y;
+    for (let i = 0; i < rows.length; i += 2) {
+      this.statCell(rows[i], PAD, top);
+      this.statCell(rows[i + 1], PAD + colW, top);
+      top += STAT_CELL_H;
+    }
+    return top;
+  }
+
+  /** One cell: dimmed label over the value, both in the stat's own colour. */
+  private statCell(row: StatRow | undefined, x: number, y: number): void {
+    if (!row) return;
+    this.root.add(
+      this.scene.add
+        .text(x, y, row.label, { fontFamily: 'Lato', fontSize: '13px', color: row.color })
+        .setOrigin(0, 0)
+        .setAlpha(0.7),
+    );
+    this.root.add(
+      this.scene.add
+        .text(x, y + 15, row.value, {
+          fontFamily: 'Lato', fontSize: '20px', color: row.color, fontStyle: 'bold',
+        })
+        .setOrigin(0, 0),
+    );
   }
 
   private rule(y: number): number {

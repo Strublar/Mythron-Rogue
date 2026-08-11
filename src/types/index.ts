@@ -37,7 +37,8 @@ export interface Ability {
   id: string;
   name: string;
   targetKind: AbilityTargetKind;
-  cooldownMs: number;
+  /** Mana spent on cast. The caster refills it at its own `manaRegen`. */
+  manaCost: number;
   damage?: number;          // applied to the boss
   heal?: number;            // applied to the target ally
   selfShield?: number;      // absorb granted to the caster
@@ -65,8 +66,13 @@ export interface HeroDef {
   tags: HeroTag[];      // faction + archetype — what tag boons key off
   rarity: HeroRarity;   // orb pull weight and card tint — never touches stats
   maxHp: number;
+  hpRegen: number;      // hp restored per second while alive
+  armor: number;        // mitigation: damage taken × 100/(100 + armor)
   attack: number;       // auto-attack damage — heal amount for healers
   attackIntervalMs: number;
+  power: number;        // ability scaling — 100 means the payloads print as written
+  critChance: number;   // % of attacks and casts that land for CRIT_MULT
+  manaRegen: number;    // mana per second, toward the ability's cost
   ability: Ability;
   /** Progression level, 1…MAX_HERO_LEVEL. Absent on the raw roster entries. */
   level?: number;
@@ -139,7 +145,7 @@ export interface HeroState {
   shield: number;
   alive: boolean;
   attackCd: number;     // ms remaining
-  abilityCd: number;    // ms remaining
+  mana: number;         // banked toward def.ability.manaCost
   threat: number;       // boss aggro score — highest wins the boss's next swing
   buffs: ActiveBuff[];
 }
@@ -150,10 +156,14 @@ export type BoonScope = HeroRole | HeroTag | 'party';
 /** Every field is a percent bonus, additive across stacks of the same effect. */
 export interface BoonEffect {
   maxHpPct?: number;
+  hpRegenPct?: number;
+  armorPct?: number;
   attackPct?: number;        // auto-attack damage — heal amount for healers
   attackSpeedPct?: number;   // haste: shortens attackIntervalMs
-  abilityPowerPct?: number;  // ability damage / heal / shield
-  cooldownPct?: number;      // haste: shortens the ability cooldown
+  abilityPowerPct?: number;  // grows `power`, which scales every ability payload
+  critChancePct?: number;    // grows the crit roll
+  manaRegenPct?: number;
+  manaCostPct?: number;      // haste: cheapens the ability's mana cost
 }
 
 /**
@@ -194,7 +204,7 @@ export interface BoonAction {
   shield?: number;
   buff?: TimedBuff;
   dot?: AbilityDot;
-  refundCdMs?: number;          // ability cooldown handed back
+  refundMana?: number;          // mana handed back toward the next cast
   bossStunMs?: number;
   taunt?: boolean;
   repeatCast?: boolean;         // resolve the caster's ability a second time, free
@@ -264,6 +274,7 @@ export interface FightEvent {
   targetHeroId?: string; // ally targeted by a heal
   sourceHeroId?: string; // hero that caused it — the healer, shielder or damage dealer
   fromDot?: boolean;     // boss_damaged: this hit is a dot tick
+  crit?: boolean;        // the attack or cast behind this rolled a critical
   amount?: number;
   outcome?: FightOutcome;
   level?: number;        // run level (boss_spawn / end)

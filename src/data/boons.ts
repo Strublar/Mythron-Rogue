@@ -26,10 +26,14 @@ export const SCOPE_LABEL: Record<BoonScope, string> = {
 
 const EFFECT_LABEL: Record<keyof BoonEffect, string> = {
   maxHpPct: 'max HP',
+  hpRegenPct: 'HP regen',
+  armorPct: 'armor',
   attackPct: 'attack power',
   attackSpeedPct: 'attack speed',
   abilityPowerPct: 'ability power',
-  cooldownPct: 'ability haste',
+  critChancePct: 'critical chance',
+  manaRegenPct: 'mana regen',
+  manaCostPct: 'mana efficiency',
 };
 
 /** Weight 'party' rolls with, so party-wide boons keep showing next to the tag rolls. */
@@ -49,24 +53,24 @@ export const BOON_POOL: BoonDef[] = [
   { id: 'aegis', name: 'Aegis', scope: 'party', effect: { maxHpPct: 12 } },
   { id: 'warcry', name: 'Warcry', scope: 'party', effect: { attackPct: 10 } },
   { id: 'bloodfrenzy', name: 'Bloodfrenzy', scope: 'party', effect: { attackSpeedPct: 12 } },
-  { id: 'arcane_focus', name: 'Arcane Focus', scope: 'party', effect: { cooldownPct: 15 } },
+  { id: 'arcane_focus', name: 'Arcane Focus', scope: 'party', effect: { manaCostPct: 15 } },
   { id: 'titans_grip', name: "Titan's Grip", scope: 'party', effect: { abilityPowerPct: 18 } },
 
   // Faction boons — the rarer the faction on the roster, the fatter its numbers.
   { id: 'sunsteel_faith', name: 'Sunsteel Faith', scope: 'lyonar', effect: { maxHpPct: 20, abilityPowerPct: 15 } },
   { id: 'divine_bond', name: 'Divine Bond', scope: 'lyonar', perMember: true, effect: { attackPct: 6 } },
-  { id: 'mantra', name: 'Mantra', scope: 'songhai', effect: { abilityPowerPct: 55, cooldownPct: 25 } },
+  { id: 'mantra', name: 'Mantra', scope: 'songhai', effect: { abilityPowerPct: 55, manaCostPct: 25 } },
   { id: 'sand_sigil', name: 'Sand Sigil', scope: 'vetruvian', effect: { abilityPowerPct: 35 } },
   { id: 'obelysk_array', name: 'Obelysk Array', scope: 'vetruvian', perMember: true, effect: { maxHpPct: 9 } },
   { id: 'shadow_creep', name: 'Shadow Creep', scope: 'abyssian', effect: { attackPct: 45, attackSpeedPct: 20 } },
   { id: 'ancestral_fury', name: 'Ancestral Fury', scope: 'magmar', effect: { attackPct: 50, maxHpPct: 30 } },
-  { id: 'winters_wake', name: "Winter's Wake", scope: 'vanar', effect: { abilityPowerPct: 45, cooldownPct: 30 } },
+  { id: 'winters_wake', name: "Winter's Wake", scope: 'vanar', effect: { abilityPowerPct: 45, manaCostPct: 30 } },
   { id: 'blood_money', name: 'Blood Money', scope: 'mercenary', perMember: true, effect: { attackPct: 5 } },
-  { id: 'contract_bonus', name: 'Contract Bonus', scope: 'mercenary', effect: { attackSpeedPct: 15, cooldownPct: 12 } },
+  { id: 'contract_bonus', name: 'Contract Bonus', scope: 'mercenary', effect: { attackSpeedPct: 15, manaCostPct: 12 } },
 
   // Archetype boons — one flat, one per-member, so stacking an archetype pays off.
   { id: 'spellweave', name: 'Spellweave', scope: 'arcanyst', effect: { abilityPowerPct: 30 } },
-  { id: 'mana_vortex', name: 'Mana Vortex', scope: 'arcanyst', perMember: true, effect: { cooldownPct: 7 } },
+  { id: 'mana_vortex', name: 'Mana Vortex', scope: 'arcanyst', perMember: true, effect: { manaCostPct: 7 } },
   { id: 'whetted_edge', name: 'Whetted Edge', scope: 'blade', effect: { attackPct: 28 } },
   { id: 'bladedance', name: 'Bladedance', scope: 'blade', perMember: true, effect: { attackSpeedPct: 6 } },
   { id: 'living_stone', name: 'Living Stone', scope: 'golem', effect: { maxHpPct: 35 } },
@@ -125,7 +129,7 @@ export const BOON_POOL: BoonDef[] = [
   },
   {
     id: 'hemorrhage', name: 'Hemorrhage', scope: 'blood',
-    trigger: { on: 'boss_damaged', when: { fromDot: true }, do: { target: 'source', refundCdMs: 200 } },
+    trigger: { on: 'boss_damaged', when: { fromDot: true }, do: { target: 'source', refundMana: 12 } },
   },
   {
     id: 'crimson_harvest', name: 'Crimson Harvest', scope: 'blood',
@@ -146,7 +150,7 @@ export const BOON_POOL: BoonDef[] = [
   },
   {
     id: 'flow_state', name: 'Flow State', scope: 'vanar',
-    trigger: { on: 'hero_cast', do: { target: 'others', refundCdMs: 300 } },
+    trigger: { on: 'hero_cast', do: { target: 'others', refundMana: 15 } },
   },
   {
     id: 'overload', name: 'Overload', scope: 'arcanyst',
@@ -266,7 +270,7 @@ function actionText(a: BoonAction): string {
     parts.push(`${swings} ${secs(a.buff.durationMs)} to ${who}`);
   }
   if (a.dot) parts.push(`bleed boss ${a.dot.damage}/${secs(a.dot.tickMs)} for ${secs(a.dot.durationMs)}`);
-  if (a.refundCdMs) parts.push(`-${secs(a.refundCdMs)} cooldown for ${who}`);
+  if (a.refundMana) parts.push(`${a.refundMana} mana back to ${who}`);
   if (a.bossStunMs) parts.push(`stagger boss ${secs(a.bossStunMs)}`);
   if (a.taunt) parts.push('taunt');
   if (a.repeatCast) parts.push('the cast fires twice');
@@ -373,10 +377,12 @@ export function applyBoons(party: HeroDef[], boons: BoonDef[]): HeroDef[] {
       );
     return growHero(def, {
       maxHpPct: pct('maxHpPct'),
+      hpRegenPct: pct('hpRegenPct'),
+      armorPct: pct('armorPct'),
       attackPct: pct('attackPct'),
       attackSpeedPct: pct('attackSpeedPct'),
       abilityPowerPct: pct('abilityPowerPct'),
-      cooldownPct: pct('cooldownPct'),
+      manaCostPct: pct('manaCostPct'),
     });
   });
 }

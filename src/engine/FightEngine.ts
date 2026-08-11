@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { boonAffects } from '../data/boons';
 import { ROLE_THREAT_MULTIPLIER, TAUNT_THREAT } from '../data/heroes';
-import { haste } from '../data/statMath';
+import { CRIT_MULT, haste, mitigate, scaleByPower } from '../data/statMath';
 import type {
   Ability, BoonAction, BoonDef, BoonTargetKind, BoonTrigger, BoonTriggerSpec, BossDef, BossState,
   FightEvent, FightEventType, FightOutcome, HeroDef, HeroRole, HeroState, TimedBuff,
@@ -60,7 +60,11 @@ function staggeredAttackCd(def: HeroDef, index: number, partySize: number): numb
   return (def.attackIntervalMs / partySize) * index;
 }
 
-/** A party at full hp with nothing on it — how every fight in the run opens. */
+/**
+ * A party at full hp and full mana with nothing on it — how every fight in the run opens.
+ * Mana starts full: the fight itself only begins on the first cast, so someone has to be
+ * able to open it.
+ */
 function makeHeroStates(heroDefs: HeroDef[]): HeroState[] {
   return heroDefs.map((def, i) => ({
     def,
@@ -68,7 +72,7 @@ function makeHeroStates(heroDefs: HeroDef[]): HeroState[] {
     shield: 0,
     alive: true,
     attackCd: staggeredAttackCd(def, i, heroDefs.length),
-    abilityCd: 0,
+    mana: def.ability.manaCost,
     threat: 0,
     buffs: [],
   }));
@@ -87,6 +91,11 @@ export function heroAttack(h: HeroState): number {
 /** Swing interval with running haste folded in. */
 export function heroInterval(h: HeroState): number {
   return haste(h.def.attackIntervalMs, buffPct(h, 'attackSpeedPct'));
+}
+
+/** One crit roll. Every hit a hero lands — auto-attack or cast — takes one. */
+function rollsCrit(h: HeroState): boolean {
+  return Math.random() * 100 < h.def.critChance;
 }
 
 export function lowestHpAlly(heroes: HeroState[]): HeroState | undefined {
@@ -129,7 +138,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
 
   /**
    * Next step of an endless run: swap in the scaled boss and restore the party
-   * (revived, full hp, no shield, cooldowns rewound). `heroDefs` is the party as the
+   * (revived, full hp, full mana, no shield). `heroDefs` is the party as the
    * interlude left it — a unit drafted between fights joins here.
    */
   startNextBoss(bossDef: BossDef, heroDefs: HeroDef[]): void {
@@ -191,14 +200,14 @@ export class FightEngine extends Phaser.Events.EventEmitter {
 
   isAbilityReady(id: string): boolean {
     const h = this.hero(id);
-    return !!h && h.alive && h.abilityCd <= 0;
+    return !!h && h.alive && h.mana >= h.def.ability.manaCost;
   }
 
-  /** 0 = just cast, 1 = ready. */
+  /** Mana banked toward the next cast: 0 = just cast, 1 = ready. */
   abilityProgress(id: string): number {
     const h = this.hero(id);
     if (!h) return 0;
-    return 1 - h.abilityCd / h.def.ability.cooldownMs;
+    return h.mana / h.def.ability.manaCost;
   }
 
   /** Highest-threat living hero — the boss's next victim, and the aggro marker's owner. */
@@ -233,7 +242,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     for (const h of this.heroes) {
       if (!h.alive) continue;
       this.tickBuffs(h, deltaMs);
-      h.abilityCd = Math.max(0, h.abilityCd - deltaMs);
+      this.tickRegen(h, deltaMs);
       h.attackCd -= deltaMs;
       if (h.attackCd <= 0) {
         h.attackCd += heroInterval(h);
@@ -270,6 +279,16 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     }
   }
 
+  /**
+   * Mana and hp trickling back, both per second. Regen is silent — no event, no threat:
+   * the views read hp and mana off the state every frame anyway.
+   */
+  private tickRegen(h: HeroState, deltaMs: number): void {
+    const secs = deltaMs / 1000;
+    h.mana = Math.min(h.def.ability.manaCost, h.mana + h.def.manaRegen * secs);
+    if (h.hp < h.def.maxHp) h.hp = Math.min(h.def.maxHp, h.hp + h.def.hpRegen * secs);
+  }
+
   /** Expire finished buffs; the survivors keep shortening this hero's swings. */
   private tickBuffs(h: HeroState, deltaMs: number): void {
     if (h.buffs.length === 0) return;
@@ -299,23 +318,24 @@ export class FightEngine extends Phaser.Events.EventEmitter {
 
   /** A hero's auto-attack: damage for tank/dps, heal the weakest ally for healers. */
   private autoAct(h: HeroState): void {
-    const power = heroAttack(h);
+    const crit = rollsCrit(h);
+    const amount = crit ? Math.round(heroAttack(h) * CRIT_MULT) : heroAttack(h);
     if (h.def.role === 'heal') {
       const target = lowestHpAlly(this.heroes);
       if (!target || target.hp >= target.def.maxHp) return;
-      this.signal({ type: 'hero_attack', heroId: h.def.id, targetHeroId: target.def.id });
-      this.healHero(target, power, h);
+      this.signal({ type: 'hero_attack', heroId: h.def.id, targetHeroId: target.def.id, crit });
+      this.healHero(target, amount, h, crit);
       return;
     }
-    this.signal({ type: 'hero_attack', heroId: h.def.id });
-    this.damageBoss(power, h);
+    this.signal({ type: 'hero_attack', heroId: h.def.id, crit });
+    this.damageBoss(amount, h, false, crit);
   }
 
-  /** Returns false when the cast is rejected (dead, on cooldown, wrong target). */
+  /** Returns false when the cast is rejected (dead, short on mana, wrong target). */
   castAbility(heroId: string, targetId: string): boolean {
     if (this.outcome !== 'ongoing') return false;
     const h = this.hero(heroId);
-    if (!h || !h.alive || h.abilityCd > 0) return false;
+    if (!h || !h.alive || h.mana < h.def.ability.manaCost) return false;
 
     const ability = h.def.ability;
     let target: HeroState | undefined;
@@ -326,7 +346,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       if (!target || !target.alive) return false;
     }
 
-    h.abilityCd = ability.cooldownMs;
+    h.mana -= ability.manaCost;
     // The party idles until someone opens with an ability — that cast starts the fight.
     if (!this.started) {
       this.started = true;
@@ -340,20 +360,31 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     return true;
   }
 
-  /** Every ability primitive, applied in order. `target` is set for ally-targeted casts. */
+  /**
+   * Every ability primitive, applied in order. `target` is set for ally-targeted casts.
+   * Payloads are written at power 100 and scale with the caster's `power`; one crit roll
+   * covers the whole cast and lands on its damage and its healing.
+   */
   private resolveAbility(a: Ability, h: HeroState, target?: HeroState): void {
-    if (a.taunt) this.applyTaunt(h);
-    if (a.selfShield) this.shieldHero(h, a.selfShield, h);
-    if (a.allyShield && target) this.shieldHero(target, a.allyShield, h);
+    const crit = rollsCrit(h);
+    /** Scaled by power alone — shields and bleeds never crit. */
+    const pow = (amount: number | undefined): number => scaleByPower(amount ?? 0, h.def.power);
+    /** Scaled by power, then by the cast's crit roll. */
+    const hit = (amount: number | undefined): number =>
+      crit ? Math.round(pow(amount) * CRIT_MULT) : pow(amount);
 
-    const dealt = this.abilityDamage(a);
+    if (a.taunt) this.applyTaunt(h);
+    if (a.selfShield) this.shieldHero(h, pow(a.selfShield), h);
+    if (a.allyShield && target) this.shieldHero(target, pow(a.allyShield), h);
+
+    const dealt = hit(this.abilityDamage(a));
     if (dealt) {
-      this.damageBoss(dealt, h);
+      this.damageBoss(dealt, h, false, crit);
       if (a.lifestealPct) this.healHero(h, Math.round((dealt * a.lifestealPct) / 100));
     }
     if (a.dot) {
       this.boss.dots.push({
-        damage: a.dot.damage, tickMs: a.dot.tickMs,
+        damage: pow(a.dot.damage), tickMs: a.dot.tickMs,
         remainingMs: a.dot.durationMs, sinceTick: 0, sourceId: h.def.id,
       });
     }
@@ -362,9 +393,9 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       this.signal({ type: 'boss_stunned', amount: a.bossStunMs });
     }
 
-    if (a.heal && target) this.healHero(target, a.heal, h);
-    if (a.selfHeal) this.healHero(h, a.selfHeal, h);
-    if (a.partyHeal) for (const ally of this.heroes) this.healHero(ally, a.partyHeal, h);
+    if (a.heal && target) this.healHero(target, hit(a.heal), h, crit);
+    if (a.selfHeal) this.healHero(h, hit(a.selfHeal), h, crit);
+    if (a.partyHeal) for (const ally of this.heroes) this.healHero(ally, hit(a.partyHeal), h, crit);
     if (a.buff) this.applyBuff(a, h, target);
 
     // Applied last so a fade isn't undone by the threat the cast itself generated.
@@ -454,7 +485,7 @@ export class FightEngine extends Phaser.Events.EventEmitter {
         if (heal > 0) this.healHero(h, heal);
         if (act.shield) this.shieldHero(h, act.shield);
         if (act.buff) this.grantBuff(h, act.buff);
-        if (act.refundCdMs) h.abilityCd = Math.max(0, h.abilityCd - act.refundCdMs);
+        if (act.refundMana) h.mana = Math.min(h.def.ability.manaCost, h.mana + act.refundMana);
         if (act.taunt) this.applyTaunt(h);
       }
 
@@ -510,15 +541,17 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     return this.topThreatHero();
   }
 
-  private damageBoss(amount: number, source?: HeroState, fromDot = false): void {
+  private damageBoss(amount: number, source?: HeroState, fromDot = false, crit = false): void {
     if (!this.boss.alive) return;
     this.boss.hp = Math.max(0, this.boss.hp - amount);
     if (source) this.addThreat(source, amount);
     if (this.boss.hp === 0) this.boss.alive = false;
-    this.signal({ type: 'boss_damaged', amount, sourceHeroId: source?.def.id, fromDot });
+    this.signal({ type: 'boss_damaged', amount, sourceHeroId: source?.def.id, fromDot, crit });
   }
 
-  private damageHero(h: HeroState, amount: number): void {
+  /** Armor comes off the swing before the shield does — the hero soaks what is left. */
+  private damageHero(h: HeroState, raw: number): void {
+    const amount = mitigate(raw, h.def.armor);
     const absorbed = Math.min(h.shield, amount);
     h.shield -= absorbed;
     h.hp = Math.max(0, h.hp - (amount - absorbed));
@@ -534,12 +567,14 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     }
   }
 
-  private healHero(h: HeroState, amount: number, source?: HeroState): void {
+  private healHero(h: HeroState, amount: number, source?: HeroState, crit = false): void {
     if (!h.alive) return;
-    const applied = Math.min(amount, h.def.maxHp - h.hp);
+    const applied = Math.round(Math.min(amount, h.def.maxHp - h.hp));
     h.hp += applied;
     if (source) this.addThreat(source, applied);
-    this.signal({ type: 'hero_healed', heroId: h.def.id, amount: applied, sourceHeroId: source?.def.id });
+    this.signal({
+      type: 'hero_healed', heroId: h.def.id, amount: applied, sourceHeroId: source?.def.id, crit,
+    });
     const wasted = amount - applied;
     if (wasted > 0) {
       this.signal({ type: 'overheal', heroId: h.def.id, amount: wasted, sourceHeroId: source?.def.id });

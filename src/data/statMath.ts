@@ -14,31 +14,52 @@ export function haste(ms: number, pct: number): number {
   return Math.round(ms / (1 + pct / 100));
 }
 
+/** A critical hit multiplies the damage or healing it lands on by this. */
+export const CRIT_MULT = 1.5;
+
+/** The power every ability payload is written at — a hero's `power` scales against it. */
+export const BASE_POWER = 100;
+
+/** Armor constant: `armor` points cut incoming damage by armor/(armor + K). */
+const ARMOR_K = 100;
+
+/** Fraction of a hit that armor eats, 0–1. What the tooltip prints next to ARMOR. */
+export function damageReduction(armor: number): number {
+  return Math.max(0, armor) / (ARMOR_K + Math.max(0, armor));
+}
+
+/** Incoming damage once armor has taken its cut. Always leaves at least a scratch. */
+export function mitigate(amount: number, armor: number): number {
+  return Math.max(1, Math.round(amount * (1 - damageReduction(armor))));
+}
+
+/** An ability payload, written at BASE_POWER, scaled by the caster's power. */
+export function scaleByPower(amount: number, power: number): number;
+export function scaleByPower(amount: number | undefined, power: number): number | undefined;
+export function scaleByPower(amount: number | undefined, power: number): number | undefined {
+  return amount === undefined ? undefined : Math.round((amount * power) / BASE_POWER);
+}
+
 /**
  * Applies one collapsed `BoonEffect` to a def, ability payloads included. The single
  * place stat percentages meet a hero: boons collapse their stacks into one effect,
  * progression collapses its per-level growth into another. Never mutates `def`.
  */
 export function growHero(def: HeroDef, e: BoonEffect): HeroDef {
-  const power = e.abilityPowerPct ?? 0;
   const a = def.ability;
   return {
     ...def,
     maxHp: grow(def.maxHp, e.maxHpPct ?? 0),
+    hpRegen: grow(def.hpRegen, e.hpRegenPct ?? 0),
+    armor: grow(def.armor, e.armorPct ?? 0),
     attack: grow(def.attack, e.attackPct ?? 0),
     attackIntervalMs: haste(def.attackIntervalMs, e.attackSpeedPct ?? 0),
-    ability: {
-      ...a,
-      cooldownMs: haste(a.cooldownMs, e.cooldownPct ?? 0),
-      damage: grow(a.damage, power),
-      heal: grow(a.heal, power),
-      selfShield: grow(a.selfShield, power),
-      allyShield: grow(a.allyShield, power),
-      partyHeal: grow(a.partyHeal, power),
-      selfHeal: grow(a.selfHeal, power),
-      executeBonus: grow(a.executeBonus, power),
-      dot: a.dot && { ...a.dot, damage: grow(a.dot.damage, power) },
-    },
+    // Ability payloads are written at power 100 — growing `power` grows every one of
+    // them at cast time, so the numbers live in exactly one place.
+    power: grow(def.power, e.abilityPowerPct ?? 0),
+    critChance: Math.min(100, grow(def.critChance, e.critChancePct ?? 0)),
+    manaRegen: grow(def.manaRegen, e.manaRegenPct ?? 0),
+    ability: { ...a, manaCost: haste(a.manaCost, e.manaCostPct ?? 0) },
   };
 }
 

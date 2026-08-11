@@ -15,7 +15,7 @@ export interface CombatantViewOptions {
   barY: number;
   /** Absolute y of the ground ring — a shared row baseline, since frames are padded. */
   groundY: number;
-  /** Heroes get a cooldown bar + a ready ring; the boss does not. */
+  /** Heroes get a mana bar + a ready ring; the boss does not. */
   showAbilityBar?: boolean;
   /** Heroes get a threat bar + an aggro marker; the boss does not. */
   showThreat?: boolean;
@@ -23,14 +23,16 @@ export interface CombatantViewOptions {
 
 const READY_RING_COLOR = 0xffd76b;
 const THREAT_COLOR = 0xff5a4a;
+/** Mana blue, the same hue the stats card prints MANA REGEN in. */
+const MANA_COLOR = 0x4fb8ff;
 
-/** Sprite + health bar + (heroes only) ability cooldown bar and ready ring. */
+/** Sprite + health bar + (heroes only) ability mana bar and ready ring. */
 export class CombatantView {
   readonly sprite: Phaser.GameObjects.Sprite;
   private readonly bar: HealthBar;
   private readonly readyRing?: Phaser.GameObjects.Ellipse;
-  private readonly cdBar?: Phaser.GameObjects.Graphics;
-  private readonly cdY: number;
+  private readonly manaBar?: Phaser.GameObjects.Graphics;
+  private readonly manaY: number;
   private readonly threatBar?: Phaser.GameObjects.Graphics;
   private readonly threatY: number;
   private readonly aggroMark?: Phaser.GameObjects.Triangle;
@@ -59,10 +61,10 @@ export class CombatantView {
       showText: opts.barText,
     });
 
-    this.cdY = barY + 9;
+    this.manaY = barY + 9;
     if (opts.showAbilityBar) {
-      this.cdBar = scene.add.graphics();
-      this.drawCooldown(1);
+      this.manaBar = scene.add.graphics();
+      this.drawMana(1);
     }
 
     // Threat sits above the hp bar: a bar for the score, a marker for who holds aggro.
@@ -86,9 +88,9 @@ export class CombatantView {
     this.bar.setValues(hp, maxHp, shield);
   }
 
-  /** progress: 0 = just cast, 1 = ready. */
-  setAbilityProgress(progress: number, ready: boolean): void {
-    this.drawCooldown(progress);
+  /** progress: 0 = just cast, 1 = mana full and the ability castable. */
+  setManaProgress(progress: number, ready: boolean): void {
+    this.drawMana(progress);
     if (ready === this.ready) return;
     this.ready = ready;
     this.readyRing?.setVisible(ready);
@@ -127,14 +129,14 @@ export class CombatantView {
       .fillRect(this.opts.x - w / 2, this.threatY, w * Phaser.Math.Clamp(ratio, 0, 1), 4);
   }
 
-  private drawCooldown(progress: number): void {
-    if (!this.cdBar) return;
+  private drawMana(progress: number): void {
+    if (!this.manaBar) return;
     const w = this.opts.barWidth;
-    this.cdBar.clear();
-    this.cdBar.fillStyle(0x000000, 0.6).fillRect(this.opts.x - w / 2, this.cdY, w, 5);
-    this.cdBar
-      .fillStyle(READY_RING_COLOR, 1)
-      .fillRect(this.opts.x - w / 2, this.cdY, w * Phaser.Math.Clamp(progress, 0, 1), 5);
+    this.manaBar.clear();
+    this.manaBar.fillStyle(0x000000, 0.6).fillRect(this.opts.x - w / 2, this.manaY, w, 5);
+    this.manaBar
+      .fillStyle(MANA_COLOR, 1)
+      .fillRect(this.opts.x - w / 2, this.manaY, w * Phaser.Math.Clamp(progress, 0, 1), 5);
   }
 
   /** Plays `anim`, or `fallback` when the atlas lacks it (most units have no cast clip). */
@@ -174,7 +176,7 @@ export class CombatantView {
   playDeath(): void {
     this.play('death');
     this.readyRing?.setVisible(false);
-    this.cdBar?.clear();
+    this.manaBar?.clear();
     this.clearThreat();
     this.scene.tweens.add({ targets: this.sprite, alpha: 0.35, duration: 600, delay: 300 });
   }
@@ -187,7 +189,7 @@ export class CombatantView {
     this.ready = false;
     if (this.opts.showAbilityBar) this.sprite.setTint(0x8c8c9c);
     this.readyRing?.setVisible(false);
-    this.drawCooldown(0);
+    this.drawMana(0);
     this.clearThreat();
   }
 

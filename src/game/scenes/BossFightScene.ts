@@ -8,6 +8,7 @@ import type { FightEvent, HeroDef } from '../../types';
 import { CombatantView } from '../CombatantView';
 import { DragCastController } from '../DragCastController';
 import { HeroInspector } from '../HeroInspector';
+import { STAT_COLOR } from '../statDisplay';
 import { createButton } from '../ui';
 import type { InterludeData } from './InterludeScene';
 import {
@@ -177,7 +178,8 @@ export class BossFightScene extends Phaser.Scene {
         this.bossView.play('attack');
         break;
       case 'boss_damaged':
-        this.bossView.popText(`-${e.amount}`, '#ffd76b');
+        // A crit reads in the crit hue with a bang, so the roll is visible without a tooltip.
+        this.bossView.popText(e.crit ? `-${e.amount}!` : `-${e.amount}`, e.crit ? STAT_COLOR.crit : '#ffd76b');
         break;
       case 'boss_stunned':
         this.bossView.popText('STAGGERED!', '#7fd4ff');
@@ -193,7 +195,7 @@ export class BossFightScene extends Phaser.Scene {
         heroView?.popText(`-${e.amount}`, '#ff8a80');
         break;
       case 'hero_healed':
-        if (e.amount) heroView?.popText(`+${e.amount}`, '#8ef2a5');
+        if (e.amount) heroView?.popText(e.crit ? `+${e.amount}!` : `+${e.amount}`, e.crit ? STAT_COLOR.crit : '#8ef2a5');
         break;
       case 'hero_death':
         heroView?.playDeath();
@@ -291,7 +293,7 @@ export class BossFightScene extends Phaser.Scene {
       const view = this.heroViews.get(h.def.id);
       if (!view) continue;
       view.setValues(h.hp, h.def.maxHp, h.shield);
-      view.setAbilityProgress(
+      view.setManaProgress(
         h.alive ? this.engine.abilityProgress(h.def.id) : 0,
         this.engine.isAbilityReady(h.def.id),
       );
