@@ -132,8 +132,8 @@ export const PASSIVES: Record<string, HeroPassive> = {
   },
   heal_scribe: {
     id: 'p_spirit_bond', name: 'Spirit Bond',
-    text: 'Every 4th heal he lands hands the party 0.8s of cooldown back.',
-    trigger: { on: 'hero_healed', when: { everyNth: 4 }, do: { target: 'party', refundCdMs: 800 } },
+    text: 'Every 4th heal he lands hands the party 10 mana back.',
+    trigger: { on: 'hero_healed', when: { everyNth: 4 }, do: { target: 'party', refundMana: 10 } },
   },
   heal_oracle: {
     id: 'p_aegis_weave', name: 'Aegis Weave',

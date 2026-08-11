@@ -10,9 +10,12 @@ export const PASSIVE_LEVEL = 5;
 /** What one level above 1 is worth. Multiplied by the levels earned, then applied once. */
 export const LEVEL_GROWTH: BoonEffect = {
   maxHpPct: 5,
+  hpRegenPct: 4,
+  armorPct: 3,
   attackPct: 4,
   attackSpeedPct: 2,
   abilityPowerPct: 4,
+  manaRegenPct: 2,
 };
 
 /** Exp needed to leave the level at this index. Index 0 is unused; index 10 is the cap. */

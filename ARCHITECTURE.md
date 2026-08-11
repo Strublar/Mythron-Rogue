@@ -35,7 +35,7 @@
     │   ├── generals.ts                 # GENERALS (6 faction generals) — the run's starting unit
     │   ├── unitDraft.ts                # rollUnitOffers: seat-anchored, tag-weighted recruit offers
     │   ├── abilities.ts                # One Ability per hero — the roster's identity
-    │   ├── statMath.ts                 # grow()/haste()/growHero() percent math (boons, buffs, levels)
+    │   ├── statMath.ts                 # grow()/haste()/growHero() percent math + armor, crit, power math
     │   ├── boons.ts                    # Boon pool, roll, effect text, applyBoons — unused by the run loop
     │   ├── progression.ts              # Levels 1–10: per-level growth, exp curve, applyProgress
     │   ├── passives.ts                 # PASSIVES — one per hero, unlocked at level 5
@@ -50,10 +50,11 @@
         ├── layout.ts                   # Slot coordinates, PARTY_SEATS, scales, bar/ground offsets
         ├── orientation.ts              # Portrait lock (Screen Orientation API + fullscreen)
         ├── UnitAnimator.ts             # UNIT_DEFS registry + atlas anim registration
-        ├── CombatantView.ts            # Sprite + health bar + cooldown bar + ready ring + threat bar/aggro mark
+        ├── CombatantView.ts            # Sprite + health bar + mana bar + ready ring + threat bar/aggro mark
         ├── ui.ts                       # Shared btn_confirm button factory + scene backdrop/label
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
-        ├── HeroTooltip.ts              # Long-press stats card: level, stats, passive, ability values
+        ├── HeroTooltip.ts              # Long-press stats card: level, colour-coded stat grid, passive, ability values
+        ├── statDisplay.ts               # STAT_COLOR + heroStatRows: the one stat palette and row order
         ├── HeroInspector.ts            # Shared long-press-to-inspect: timer, drag guard, slot probes
         ├── BoonCard.ts                 # Boon offer card — unused by the run loop, kept with boons.ts
         ├── HeroCard.ts                 # Roster grid card: portrait, name, stat strip, level/exp, tap/hold
@@ -110,12 +111,30 @@ main.ts
   (fielded or already in the roll) or a role whose seats are full, so a near-full party gets
   fewer than 3 offers and a full one gets none. Ownership is ignored — the whole `ROSTER` is
   draftable, and so are account levels: everyone fights at base stats.
+- **Stats.** Every `HeroDef` carries eight combat numbers: `maxHp`, `hpRegen` (hp/s),
+  `armor`, `attack` + `attackIntervalMs`, `power`, `critChance` and `manaRegen` (mana/s).
+  Armor mitigates TFT-style — `mitigate()` in `statMath.ts` cuts a hit by
+  `armor/(armor+100)`. `power` is the ability scalar: every payload in `abilities.ts` is
+  written at `BASE_POWER` (100) and `scaleByPower` folds the caster's power in at cast
+  time, so ability numbers live in exactly one place and the tooltip prints the scaled
+  value. `critChance` is rolled once per auto-attack and once per cast, multiplying that
+  hit's damage *and* healing by `CRIT_MULT` (1.5) — shields and bleeds never crit.
+  `hpRegen` and `manaRegen` trickle in `FightEngine.tickRegen`, silently: no event, no
+  threat, since the views read hp and mana off the state every frame.
+- **Mana, not cooldowns.** An `Ability` costs `manaCost`; `HeroState.mana` banks toward it
+  at the hero's `manaRegen` and a cast spends it. Heroes start every fight at full mana —
+  the fight itself only begins on the first cast, so someone has to be able to open it.
+  `abilityProgress` is the fill ratio behind `CombatantView`'s blue mana bar.
 - **Abilities** are pure data (`src/data/abilities.ts`). Primitives the engine resolves:
   `damage`, `heal`, `partyHeal`, `selfHeal`, `selfShield`, `allyShield`, `taunt`,
   `lifestealPct`, `bossStunMs`, `executeBelowPct`/`executeBonus`, `threatFlat`, `dot`
   (bleeds the boss over time) and `buff` (timed `attackPct`/`attackSpeedPct` on
   self/ally/party). Adding a field means adding a line to `abilityEffects` in
   `HeroTooltip.ts` — that function is the only place ability copy is written.
+- **Stat colours.** `src/game/statDisplay.ts` owns the Teamfight-Tactics-style palette
+  (`STAT_COLOR`: green hp, orange attack, gold armor, violet power, pink crit, blue mana)
+  and `heroStatRows`, the label/value/colour rows the tooltip lays out two per line.
+  Anything that prints a stat pulls its colour from there — crit pop-ups included.
 - **Buffs.** Temporary, riding on `HeroState.buffs` and folded in by `heroAttack`/
   `heroInterval` at tick time, using `grow`/`haste` from `src/data/statMath.ts`.
 - **Real-time, but the fight only starts on the first ability cast.** Until then every
