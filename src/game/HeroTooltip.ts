@@ -4,7 +4,7 @@ import { tagStrip } from '../data/heroes';
 import { PASSIVE_LEVEL, passiveOf } from '../data/progression';
 import { BASE_POWER, scaleByPower } from '../data/statMath';
 import { GAME_HEIGHT, GAME_WIDTH, ROLE_COLOR } from './layout';
-import { STAT_COLOR, heroStatRows, type StatRow } from './statDisplay';
+import { STAT_COLOR, drawStatIcon, heroStatRows, type StatRow } from './statDisplay';
 
 const PANEL_W = 420;
 const PAD = 20;
@@ -14,8 +14,10 @@ const MARGIN = 14;
 const ANCHOR_GAP = 80;
 const CARET_W = 24;
 const CARET_H = 14;
-/** One stat cell: label line over value line, plus breathing room. */
-const STAT_CELL_H = 44;
+/** One stat cell: a glyph and its value on one line, plus breathing room. */
+const STAT_CELL_H = 34;
+/** Glyph size inside a stat cell. */
+const STAT_ICON = 22;
 
 const ROLE_LABEL: Record<HeroRole, string> = { tank: 'TANK', dps: 'DPS', heal: 'HEALER' };
 const CREAM = '#f3e6c8';
@@ -188,8 +190,8 @@ export class HeroTooltip {
   }
 
   /**
-   * The stat block, two cells per row, each one colour-coded by stat — the whole point of
-   * the card is that hp reads green and power reads violet before a word is read.
+   * The stat block, two cells per row: a glyph and a number, colour-coded by stat — the
+   * whole point of the card is that it reads without reading, hp green, power violet.
    */
   private statGrid(hero: HeroDef, y: number): number {
     const rows = heroStatRows(hero);
@@ -203,21 +205,17 @@ export class HeroTooltip {
     return top;
   }
 
-  /** One cell: dimmed label over the value, both in the stat's own colour. */
+  /** One cell: the stat's glyph, then its value, both in the stat's own colour. */
   private statCell(row: StatRow | undefined, x: number, y: number): void {
     if (!row) return;
+    const mid = y + STAT_ICON / 2;
+    this.root.add(drawStatIcon(this.scene, row.icon, x + STAT_ICON / 2, mid, STAT_ICON, row.color));
     this.root.add(
       this.scene.add
-        .text(x, y, row.label, { fontFamily: 'Lato', fontSize: '13px', color: row.color })
-        .setOrigin(0, 0)
-        .setAlpha(0.7),
-    );
-    this.root.add(
-      this.scene.add
-        .text(x, y + 15, row.value, {
+        .text(x + STAT_ICON + 10, mid, row.value, {
           fontFamily: 'Lato', fontSize: '20px', color: row.color, fontStyle: 'bold',
         })
-        .setOrigin(0, 0),
+        .setOrigin(0, 0.5),
     );
   }
 
