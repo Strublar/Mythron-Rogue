@@ -41,6 +41,29 @@ export function scaleByPower(amount: number | undefined, power: number): number 
 }
 
 /**
+ * What each percentage field is called in player-facing copy. Boons, artifacts and
+ * anything else that prints a `BoonEffect` reads its labels here.
+ */
+export const EFFECT_LABEL: Record<keyof BoonEffect, string> = {
+  maxHpPct: 'max HP',
+  hpRegenPct: 'HP regen',
+  armorPct: 'armor',
+  attackPct: 'attack power',
+  attackSpeedPct: 'attack speed',
+  abilityPowerPct: 'ability power',
+  critChancePct: 'critical chance',
+  manaRegenPct: 'mana regen',
+  manaCostPct: 'mana efficiency',
+};
+
+/** `+20% armor`, one per set field, in `EFFECT_LABEL` order. */
+export function effectParts(e: BoonEffect): string[] {
+  return (Object.keys(EFFECT_LABEL) as (keyof BoonEffect)[])
+    .filter(k => e[k])
+    .map(k => `+${e[k]}% ${EFFECT_LABEL[k]}`);
+}
+
+/**
  * Applies one collapsed `BoonEffect` to a def, ability payloads included. The single
  * place stat percentages meet a hero: boons collapse their stacks into one effect,
  * progression collapses its per-level growth into another. Never mutates `def`.

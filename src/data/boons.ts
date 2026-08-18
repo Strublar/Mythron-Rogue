@@ -1,7 +1,7 @@
 import type {
   BoonAction, BoonDef, BoonEffect, BoonScope, BoonTargetKind, BoonTrigger, HeroDef, HeroTag,
 } from '../types';
-import { growHero } from './statMath';
+import { EFFECT_LABEL, growHero } from './statMath';
 
 export const SCOPE_LABEL: Record<BoonScope, string> = {
   tank: 'Tanks',
@@ -22,18 +22,6 @@ export const SCOPE_LABEL: Record<BoonScope, string> = {
   golem: 'Golems',
   beast: 'Beasts',
   blood: 'Bloodbound',
-};
-
-const EFFECT_LABEL: Record<keyof BoonEffect, string> = {
-  maxHpPct: 'max HP',
-  hpRegenPct: 'HP regen',
-  armorPct: 'armor',
-  attackPct: 'attack power',
-  attackSpeedPct: 'attack speed',
-  abilityPowerPct: 'ability power',
-  critChancePct: 'critical chance',
-  manaRegenPct: 'mana regen',
-  manaCostPct: 'mana efficiency',
 };
 
 /** Weight 'party' rolls with, so party-wide boons keep showing next to the tag rolls. */

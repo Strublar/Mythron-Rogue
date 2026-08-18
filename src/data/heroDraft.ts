@@ -1,4 +1,5 @@
-import type { HeroDef, HeroRarity } from '../types';
+import type { ArtifactDef, HeroDef, HeroRarity } from '../types';
+import { ARTIFACT_POOL } from './artifacts';
 import { RECRUIT_POOL } from './heroes';
 import { RARITY_ORDER, RARITY_WEIGHT } from './rarity';
 
@@ -34,7 +35,7 @@ export function rollRecruitOffers(
 }
 
 /** A rarity drawn on `RARITY_WEIGHT`, restricted to tiers the remaining pool still has. */
-function rollRarity(pool: HeroDef[], rng: () => number): HeroRarity {
+function rollRarity(pool: { rarity: HeroRarity }[], rng: () => number): HeroRarity {
   const tiers = RARITY_ORDER.filter(r => RARITY_WEIGHT[r] > 0 && pool.some(h => h.rarity === r));
   const total = tiers.reduce((sum, r) => sum + RARITY_WEIGHT[r], 0);
   let ticket = rng() * total;
@@ -65,6 +66,31 @@ export function rollShopOffers(
 
     const rarity = rollRarity(candidates, rng);
     const offer = pick(candidates.filter(h => h.rarity === rarity), rng);
+    offers.push(offer);
+    taken.add(offer.id);
+  }
+
+  return offers;
+}
+
+/**
+ * The shop's gear, rolled on the same rarity weights as its heroes. Artifacts already
+ * worn never come back — there is nothing to gain from a second copy.
+ */
+export function rollArtifactOffers(
+  count: number,
+  owned: ReadonlySet<string>,
+  rng: () => number = Math.random,
+): ArtifactDef[] {
+  const taken = new Set(owned);
+  const offers: ArtifactDef[] = [];
+
+  for (let i = 0; i < count; i++) {
+    const candidates = ARTIFACT_POOL.filter(a => !taken.has(a.id));
+    if (candidates.length === 0) break;
+
+    const rarity = rollRarity(candidates, rng);
+    const offer = pick(candidates.filter(a => a.rarity === rarity), rng);
     offers.push(offer);
     taken.add(offer.id);
   }

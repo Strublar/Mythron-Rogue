@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
-import type { HeroDef } from '../types';
-import { ROLE_COLOR, seatSlot } from './layout';
+import { seatSlot } from './layout';
 
 /** Finger-friendly catch radius around a seat. */
 const SEAT_RADIUS = 90;
@@ -10,14 +9,15 @@ const DRAG_THRESHOLD = 10;
 /**
  * Drag an offer card onto one of the party's seats. Separate from `DragCastController`,
  * which hit-tests live `CombatantView`s and casts abilities — this one only moves a card
- * and reports the seat it landed on. Only seats matching the hero's role light up; a drop
- * anywhere else springs the card home and changes nothing.
+ * and reports the seat it landed on. Only the seats the caller names light up; a drop
+ * anywhere else springs the card home and changes nothing. The payload is whatever the
+ * scene drags — a hero for a recruit, an artifact for a piece of gear.
  */
-export class SeatDragController {
+export class SeatDragController<T> {
   private readonly highlights: Phaser.GameObjects.Arc[] = [];
   private dragging?: {
     card: Phaser.GameObjects.Container;
-    hero: HeroDef;
+    payload: T;
     home: { x: number; y: number };
     /** Card centre minus grab point, so the card never teleports under the finger. */
     grab: { x: number; y: number };
@@ -27,24 +27,27 @@ export class SeatDragController {
 
   constructor(
     private readonly scene: Phaser.Scene,
-    private readonly onDrop: (hero: HeroDef, seat: number) => void,
+    private readonly onDrop: (payload: T, seat: number) => void,
   ) {
     scene.input.on(Phaser.Input.Events.POINTER_MOVE, (p: Phaser.Input.Pointer) => this.move(p));
     scene.input.on(Phaser.Input.Events.POINTER_UP, (p: Phaser.Input.Pointer) => this.release(p));
     scene.input.on(Phaser.Input.Events.POINTER_UP_OUTSIDE, () => this.cancel());
   }
 
-  /** Makes a card draggable. `seats` is where this hero may legally land. */
-  register(card: Phaser.GameObjects.Container, hero: HeroDef, seats: number[]): void {
+  /**
+   * Makes a card draggable. `seats` is where this payload may legally land, `accent` the
+   * colour its target rings are drawn in.
+   */
+  register(card: Phaser.GameObjects.Container, payload: T, seats: number[], accent: number): void {
     const home = { x: card.x, y: card.y };
     card.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, (p: Phaser.Input.Pointer) => {
       this.dragging = {
-        card, hero, home,
+        card, payload, home,
         grab: { x: card.x - p.x, y: card.y - p.y },
         from: { x: p.x, y: p.y },
       };
       card.setDepth(card.depth + 100);
-      this.showTargets(seats, hero);
+      this.showTargets(seats, accent);
     });
   }
 
@@ -70,7 +73,7 @@ export class SeatDragController {
     const seat = travelled > DRAG_THRESHOLD ? this.seatUnder(p.x, p.y) : -1;
 
     this.cancel();
-    if (seat >= 0) this.onDrop(drag.hero, seat);
+    if (seat >= 0) this.onDrop(drag.payload, seat);
   }
 
   /** The nearest legal seat within the catch radius, or -1. */
@@ -88,13 +91,13 @@ export class SeatDragController {
     return best;
   }
 
-  private showTargets(seats: number[], hero: HeroDef): void {
+  private showTargets(seats: number[], accent: number): void {
     this.clearTargets();
     for (const seat of seats) {
       const { x, y } = seatSlot(seat);
       const ring = this.scene.add
         .circle(x, y, SEAT_RADIUS * 0.7)
-        .setStrokeStyle(3, ROLE_COLOR[hero.role], 0.9)
+        .setStrokeStyle(3, accent, 0.9)
         .setDepth(50)
         .setData('seat', seat);
       this.scene.tweens.add({

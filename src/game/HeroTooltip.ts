@@ -2,7 +2,8 @@ import Phaser from 'phaser';
 import type { Ability, AbilityBuff, HeroDef, HeroRole } from '../types';
 import { tagStrip } from '../data/heroes';
 import { RARITY_LABEL } from '../data/rarity';
-import { BASE_POWER, scaleByPower } from '../data/statMath';
+import { BASE_POWER, effectParts, scaleByPower } from '../data/statMath';
+import { createArtifactIcon } from './ArtifactIcon';
 import { GAME_HEIGHT, GAME_WIDTH, ROLE_COLOR } from './layout';
 import { STAT_COLOR, drawStatIcon, heroStatRows, type StatRow } from './statDisplay';
 
@@ -18,6 +19,8 @@ const CARET_H = 14;
 const STAT_CELL_H = 34;
 /** Glyph size inside a stat cell. */
 const STAT_ICON = 22;
+/** The equipped artifact's icon, drawn beside its name. */
+const ARTIFACT_ICON = 44;
 
 const ROLE_LABEL: Record<HeroRole, string> = { tank: 'TANK', dps: 'DPS', heal: 'HEALER' };
 const CREAM = '#f3e6c8';
@@ -104,6 +107,7 @@ export class HeroTooltip {
     y = this.statGrid(hero, y) + GAP;
     y = this.rule(y);
 
+    y = this.artifactBlock(hero, y);
     y = this.passiveBlock(hero, y);
 
     const { ability } = hero;
@@ -138,6 +142,25 @@ export class HeroTooltip {
     this.root.setVisible(false);
   }
 
+  /**
+   * The artifact this hero wears, if any: its icon, the stats it grants (already folded
+   * into the grid above) and its passive, which fires alongside the hero's own.
+   */
+  private artifactBlock(hero: HeroDef, y: number): number {
+    const { artifact } = hero;
+    if (!artifact) return y;
+
+    this.right('ARTIFACT', 16, MUTED, y + 6);
+    const icon = createArtifactIcon(this.scene, artifact, PAD + ARTIFACT_ICON / 2, y + ARTIFACT_ICON / 2, ARTIFACT_ICON);
+    this.root.add(icon);
+    const textX = PAD + ARTIFACT_ICON + 10;
+    let next = this.line(artifact.name.toUpperCase(), 22, GOLD, y, 'bold', textX);
+    next = this.line(effectParts(artifact.effect).join(', '), 16, CREAM, next, '', textX);
+    next = Math.max(next, y + ARTIFACT_ICON + GAP);
+    next = this.line(`${artifact.passive.name}: ${artifact.passive.text}`, 17, CREAM, next) + GAP;
+    return this.rule(next);
+  }
+
   /** The hero's passive — always live, so there is no locked state to draw. */
   private passiveBlock(hero: HeroDef, y: number): number {
     const { passive } = hero;
@@ -159,14 +182,14 @@ export class HeroTooltip {
     );
   }
 
-  private line(text: string, size: number, color: string, y: number, style = ''): number {
+  private line(text: string, size: number, color: string, y: number, style = '', x = PAD): number {
     const t = this.scene.add
-      .text(PAD, y, text, {
+      .text(x, y, text, {
         fontFamily: 'Lato',
         fontSize: `${size}px`,
         color,
         fontStyle: style,
-        wordWrap: { width: PANEL_W - PAD * 2 },
+        wordWrap: { width: PANEL_W - x - PAD },
       })
       .setOrigin(0, 0);
     this.root.add(t);
