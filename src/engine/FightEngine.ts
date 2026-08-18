@@ -4,7 +4,7 @@ import { ROLE_THREAT_MULTIPLIER, TAUNT_THREAT } from '../data/heroes';
 import { CRIT_MULT, haste, mitigate, scaleByPower } from '../data/statMath';
 import type {
   Ability, BoonAction, BoonDef, BoonTargetKind, BoonTrigger, BoonTriggerSpec, BossDef, BossState,
-  FightEvent, FightEventType, FightOutcome, HeroDef, HeroRole, HeroState, TimedBuff,
+  FightEvent, FightEventType, FightOutcome, HeroDef, HeroPassive, HeroRole, HeroState, TimedBuff,
 } from '../types';
 
 /** Sentinel target id meaning "the boss" for ability casts. */
@@ -140,15 +140,21 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     this.rebuildTriggers();
   }
 
-  /** Fresh slots for the boons owned and the passives the party's current defs carry. */
+  /**
+   * Fresh slots for the boons owned, the passives the party's current defs carry and the
+   * passive of whatever artifact each hero wears — both hero-owned, so only that hero's
+   * events wake them and a dead owner's lie dormant.
+   */
   private rebuildTriggers(): void {
     this.triggers = [
       ...this.boons
         .filter(b => b.trigger)
         .map(boon => triggerSlot({ spec: boon.trigger!, boon })),
-      ...this.heroes
-        .filter(h => h.def.passive)
-        .map(h => triggerSlot({ spec: h.def.passive!.trigger, ownerId: h.def.id })),
+      ...this.heroes.flatMap(h =>
+        [h.def.passive, h.def.artifact?.passive]
+          .filter((p): p is HeroPassive => !!p)
+          .map(p => triggerSlot({ spec: p.trigger, ownerId: h.def.id })),
+      ),
     ];
   }
 

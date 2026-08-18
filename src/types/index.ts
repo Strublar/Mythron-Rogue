@@ -79,6 +79,26 @@ export interface HeroDef {
   ability: Ability;
   /** Folded on by `hydrate` in `heroes.ts` — every hero fields its passive from stage 1. */
   passive?: HeroPassive;
+  /**
+   * The artifact the seat carries, folded in by `equipArtifact`: its stats are already
+   * baked into the numbers above, its passive rides alongside the hero's own.
+   */
+  artifact?: ArtifactDef;
+}
+
+/**
+ * A piece of gear bought in the shop and dropped on a seat — one per character, swapped
+ * out like a hero. `effect` is percent stats baked into the wearer's def; `passive` is a
+ * second owner-scoped trigger, resolved exactly like a hero passive.
+ */
+export interface ArtifactDef {
+  id: string;
+  /** Icon atlas key: `resources/icons/{iconKey}.png` + `{iconKey}_atlas.json`. */
+  iconKey: string;
+  name: string;
+  rarity: HeroRarity;   // shop price and card tint — never touches stats
+  effect: BoonEffect;
+  passive: HeroPassive;
 }
 
 /**

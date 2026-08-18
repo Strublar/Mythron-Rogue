@@ -4,67 +4,73 @@
 
 ```
 /
-├── index.html                          # HTML shell + #rotate-gate portrait fallback overlay
+├── index.html                      # HTML shell + #rotate-gate portrait fallback overlay
 ├── package.json
 ├── vite.config.ts
 ├── tsconfig.json
 ├── public/
-│   ├── manifest.json                   # PWA manifest (portrait, fullscreen)
+│   ├── manifest.json               # PWA manifest (portrait, fullscreen)
 │   ├── sw.js
 │   └── resources/
-│       ├── units/                      # {unit}.png + {unit}_atlas.json (+ original .plist)
+│       ├── units/                  # {unit}.png + {unit}_atlas.json (+ original .plist)
+│       ├── icons/                  # Spell/artifact icons; artifacts carry a generated _atlas.json
 │       ├── maps/ scenes/ ui/ generals/ # static PNG/JPG backdrops and UI art
-│       └── fonts/                      # Lato
+│       └── fonts/                  # Lato
 ├── scripts/
-│   ├── plist-to-atlas.mjs              # Cocos2d .plist → Phaser JSON atlas
-│   ├── batch-plist-to-atlas.mjs        # npm run plist-to-atlas
-│   ├── extract-sprites.mjs             # npm run extract-sprites
-│   ├── generate-unit-catalog.mjs       # npm run unit-catalog → docs/units/
-│   ├── generate-spell-catalog.mjs      # npm run spell-catalog → docs/spells/ + docs/artifacts/
-│   └── lib/plist.mjs                   # Shared Cocos2d .plist frame reader
+│   ├── plist-to-atlas.mjs          # Cocos2d .plist → Phaser JSON atlas
+│   ├── batch-plist-to-atlas.mjs    # npm run plist-to-atlas
+│   ├── extract-sprites.mjs         # npm run extract-sprites
+│   ├── generate-unit-catalog.mjs   # npm run unit-catalog → docs/units/
+│   ├── generate-spell-catalog.mjs  # npm run spell-catalog → docs/spells/ + docs/artifacts/
+│   └── lib/plist.mjs               # Shared Cocos2d .plist frame reader
 ├── docs/
-│   ├── units/                          # Generated sprite catalog, one .md per faction + thumbs/
-│   ├── spells/                         # Generated spell catalog (icon + VFX), per faction + thumbs/
-│   └── artifacts/                      # Generated artifact icon catalog, per faction + thumbs/
+│   ├── units/                      # Generated sprite catalog, one .md per faction + thumbs/
+│   ├── spells/                     # Generated spell catalog (icon + VFX), per faction + thumbs/
+│   └── artifacts/                  # Generated artifact icon catalog, per faction + thumbs/
 └── src/
-    ├── main.ts                         # Entry: boots Phaser, preloads Lato, registers sw
+    ├── main.ts                     # Entry: boots Phaser, preloads Lato, registers sw
     ├── types/
-    │   └── index.ts                    # ALL shared types/interfaces (source of truth)
+    │   └── index.ts                # ALL shared types/interfaces (source of truth)
     ├── data/
-    │   ├── heroes.ts                   # ROSTER (27) + STARTER_PARTY_IDS + RECRUIT_POOL + threat tuning
-    │   ├── abilities.ts                # One Ability per hero — the roster's identity
-    │   ├── statMath.ts                 # grow()/haste()/growHero() percent math + armor, crit, power math
-    │   ├── boons.ts                    # Boon pool, roll, effect text, applyBoons — unused by the run loop
-    │   ├── passives.ts                 # PASSIVES — one per hero, live from the moment it is fielded
-    │   ├── rarity.ts                   # Rarity label/colour/order + roll weight + SHOP_PRICE
-    │   ├── heroDraft.ts                # rollRecruitOffers (tag-anchored) + rollShopOffers (rarity-weighted)
-    │   └── bosses.ts                   # BOSS_LADDER (8) + bossForStage looping + goldForStage
+    │   ├── heroes.ts               # ROSTER (27) + STARTER_PARTY_IDS + RECRUIT_POOL + threat tuning
+    │   ├── abilities.ts            # One Ability per hero — the roster's identity
+    │   ├── statMath.ts             # grow()/haste()/growHero() + EFFECT_LABEL/effectParts + armor, crit, power math
+    │   ├── boons.ts                # Boon pool, roll, effect text, applyBoons — unused by the run loop
+    │   ├── passives.ts             # PASSIVES — one per hero, live from the moment it is fielded
+    │   ├── rarity.ts               # Rarity label/colour/order + roll weight + SHOP_PRICE
+    │   ├── artifacts.ts            # ARTIFACT_POOL (12) + equipArtifact — gear stats + one passive
+    │   ├── heroDraft.ts            # rollRecruitOffers + rollShopOffers + rollArtifactOffers
+    │   └── bosses.ts               # BOSS_LADDER (8) + bossForStage looping + goldForStage
     ├── engine/
-    │   ├── FightEngine.ts              # Real-time fight sim: cooldowns, auto-acts, casts
-    │   └── RunState.ts                 # One run: seven seats, stage, purse. Nothing persists.
+    │   ├── FightEngine.ts          # Real-time fight sim: cooldowns, auto-acts, casts
+    │   └── RunState.ts             # One run: seven seats, stage, purse. Nothing persists.
     └── game/
-        ├── PhaserGame.ts               # Phaser.Game config (720×1280 portrait, FIT)
-        ├── layout.ts                   # Slot coordinates, PARTY_SEATS, scales, bar/ground offsets
-        ├── orientation.ts              # Portrait lock (Screen Orientation API + fullscreen)
-        ├── UnitAnimator.ts             # UNIT_DEFS registry + atlas anim registration
-        ├── CombatantView.ts            # Sprite + health bar + mana bar + ready ring + threat bar/aggro mark
-        ├── ui.ts                       # Shared btn_confirm button factory + scene backdrop/label
-        ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
-        ├── HeroTooltip.ts              # Long-press stats card: rarity, colour-coded stat grid, passive, ability values
-        ├── statDisplay.ts               # STAT_COLOR + heroStatRows: the one stat palette and row order
-        ├── HeroInspector.ts            # Shared long-press-to-inspect: timer, drag guard, slot probes
-        ├── BoonCard.ts                 # Boon offer card — unused by the run loop, kept with boons.ts
-        ├── HeroCard.ts                 # Offer card container: portrait, name, stat strip, rarity, price
-        ├── BoonListPanel.ts            # "BOONS" overlay — unused by the run loop, kept with boons.ts
-        ├── PrismaticFx.ts              # Foil treatment — unused by the run loop, kept with PrismaticBurst
-        ├── PrismaticBurst.ts           # Prismatic reveal flourish — unused by the run loop
-        ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
-        ├── SeatDragController.ts       # Drag an offer card onto a seat: role highlights, drop test
+        ├── PhaserGame.ts           # Phaser.Game config (720×1280 portrait, FIT)
+        ├── layout.ts               # Slot coordinates, PARTY_SEATS, scales, bar/ground offsets
+        ├── orientation.ts          # Portrait lock (Screen Orientation API + fullscreen)
+        ├── UnitAnimator.ts         # UNIT_DEFS registry + atlas anim registration
+        ├── CombatantView.ts        # Sprite + health bar + mana bar + ready ring + threat bar/aggro mark
+        ├── ui.ts                   # Shared btn_confirm button factory + scene backdrop/label
+        ├── HealthBar.ts            # Reusable HP/shield bar (heroes and boss)
+        ├── HeroTooltip.ts          # Long-press stats card: rarity, stat grid, artifact, passive, ability values
+        ├── statDisplay.ts          # STAT_COLOR + heroStatRows: the one stat palette and row order
+        ├── HeroInspector.ts        # Shared long-press-to-inspect: timer, drag guard, slot probes
+        ├── BoonCard.ts             # Boon offer card — unused by the run loop, kept with boons.ts
+        ├── OfferCard.ts            # Shared offer frame: rarity box, rarity label, price, locked dim
+        ├── HeroCard.ts             # Hero offer: portrait, name, tag strip, stat strip, role accent
+        ├── ArtifactCard.ts         # Artifact offer: animated icon, granted stats, passive text
+        ├── ArtifactIcon.ts         # Artifact icon atlas keys + looping idle sprite
+        ├── TabBar.ts               # Pill tab row — the shop's HEROES / ARTIFACTS switch
+        ├── BoonListPanel.ts        # "BOONS" overlay — unused by the run loop, kept with boons.ts
+        ├── PrismaticFx.ts          # Foil treatment — unused by the run loop, kept with PrismaticBurst
+        ├── PrismaticBurst.ts       # Prismatic reveal flourish — unused by the run loop
+        ├── DragCastController.ts   # Drag-to-cast: arrow, target highlight, hit test
+        ├── SeatDragController.ts   # Drag an offer card onto a seat: target rings, drop test
         └── scenes/
-            ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
-            ├── MainMenuScene.ts        # Title + NEW RUN
-            ├── InterludeScene.ts       # Between stages: free recruit, then the paid shop
-            └── BossFightScene.ts       # Layout, engine ↔ view wiring, result overlay
+            ├── BootScene.ts        # Preloads unit atlases (from UNIT_DEFS) + backdrops
+            ├── MainMenuScene.ts    # Title + NEW RUN
+            ├── InterludeScene.ts   # Between stages: free recruit, then the shop (heroes / artifacts tabs)
+            └── BossFightScene.ts   # Layout, engine ↔ view wiring, result overlay
 ```
 
 ## Data Flow
@@ -97,12 +103,22 @@ main.ts
   ends the run outright — there is no retry and nothing carries over, so the next run opens on
   the same starter seven. `RunState` holds the whole run: the seven seats, the stage number and
   the purse. Nothing is persisted; there is no account state, no save file, no localStorage.
+- **Artifacts.** Gear bought in the shop's `ARTIFACTS` tab and dropped on any seat — one per
+  character, a second buy replacing the first. An `ArtifactDef` carries a `BoonEffect` of
+  percent stats and one `HeroPassive`. The gear rides the *seat*, not the body, so swapping the
+  occupant hands it over. `RunState.party()` folds it in with `equipArtifact` (`growHero`, the
+  same math boons use) and carries the def on `HeroDef.artifact`, so every caller — engine,
+  cards, tooltip — reads one geared def. `FightEngine.rebuildTriggers` slots the artifact's
+  passive next to the hero's own, owner-scoped, so a dead bearer's lies dormant just the same.
+  Icons are the CC0 artifact art: `resources/icons/{iconKey}.png` + a generated `_atlas.json`
+  (12 idle frames), preloaded by `BootScene` and looped by `ArtifactIcon`.
 - **The team is drafted inside the run.** Every run opens on `STARTER_PARTY_IDS` — the seven
   rarity-`C` starters — seated in `PARTY_SEATS` order. `InterludeScene` runs twice per cleared
   boss: `offer` hands out one free recruit rolled by `rollRecruitOffers` (tag-anchored on a
   random seat, so a party leaning on a tag keeps drawing it), then `shop` sells up to three more
-  rolled by `rollShopOffers` (rarity-weighted) at `SHOP_PRICE`. Both work the same way: drag a
-  card onto a seat of its role and it **replaces** whoever sits there. The party is always seven,
+  rolled by `rollShopOffers` (rarity-weighted) at `SHOP_PRICE`, plus three artifacts rolled by
+  `rollArtifactOffers` on a second tab. All of them work the same way: drag a card onto a seat —
+  a hero **replaces** whoever sits there (its own row only), an artifact straps onto any seat. The party is always seven,
   so every pick is a swap — there is never a gap to fill.
 - **The boss ladder.** `BOSS_LADDER` is eight hand-tuned `BossDef`s fought in stage order;
   `bossForStage(stage)` indexes it and, past the last rung, loops it with compounding hp and

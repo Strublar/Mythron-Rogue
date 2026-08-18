@@ -1,29 +1,21 @@
 import Phaser from 'phaser';
 import type { HeroDef } from '../types';
 import { tagStrip } from '../data/heroes';
-import { RARITY_COLOR, RARITY_LABEL } from '../data/rarity';
 import { createUnitPortrait } from './UnitAnimator';
 import { BOON_CREAM, BOON_GOLD, BOON_MUTED } from './BoonCard';
+import { CARD_PAD, createOfferCard, type OfferCardOpts } from './OfferCard';
 import { ROLE_COLOR } from './layout';
 
-const PAD = 8;
 /** Portrait scale — offer cards run smaller than the battlefield. */
 const PORTRAIT_SCALE = 1.2;
 /** Atlas canvases vary (80–110px); clamp so the tall ones don't spill out of the card. */
 const PORTRAIT_MAX_H = 84;
-const IDLE = 0x11142a;
 
-export interface HeroCardOpts {
-  /** Shop card: draws the price badge. Absent on a free recruit offer. */
-  price?: number;
-  /** Priced out of reach — the card dims and refuses the drag. */
-  locked?: boolean;
-}
+export type HeroCardOpts = OfferCardOpts;
 
 /**
- * One offer: static idle portrait, name, tag strip, stat strip, rarity and (in the shop)
- * a price. Returned as a container so the interlude can drag the whole card onto a seat —
- * gesture handling belongs to `SeatDragController`, the card only draws itself.
+ * One hero offer on the shared offer frame: static idle portrait, name, tag strip, stat
+ * strip and the role accent that says which row it may be dropped on.
  */
 export function createHeroCard(
   scene: Phaser.Scene,
@@ -35,30 +27,15 @@ export function createHeroCard(
   opts: HeroCardOpts = {},
   depth = 0,
 ): Phaser.GameObjects.Container {
-  // The hit area lives with the card, not with whoever wires up a gesture: a locked
-  // card takes no drag but still opens its stats card, so both must hit the same box.
-  // Phaser hit-tests a container in *origin space* — it adds the display origin to the
-  // local point before calling Contains — so the box runs (0,0)→(w,h), not (-w/2,-h/2).
-  // A centred rectangle here lands half a card to the left, which is how a press on one
-  // card used to grab its neighbour (or nothing at all past the right-hand edge).
-  const card = scene.add
-    .container(x, y)
-    .setDepth(depth)
-    .setSize(w, h)
-    .setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
-
-  const bg = scene.add
-    .rectangle(0, 0, w, h, IDLE, 0.95)
-    .setStrokeStyle(2, RARITY_COLOR[hero.rarity], 0.9);
-  card.add(bg);
+  const card = createOfferCard(scene, x, y, w, h, hero.rarity, opts, depth);
 
   card.add(createUnitPortrait(scene, hero.unitKey, 0, -32, PORTRAIT_SCALE, PORTRAIT_MAX_H));
 
   card.add(
     scene.add
-      .text(0, h / 2 - PAD - 52, hero.name.toUpperCase(), {
+      .text(0, h / 2 - CARD_PAD - 52, hero.name.toUpperCase(), {
         fontFamily: 'Lato', fontSize: '14px', color: BOON_GOLD, fontStyle: 'bold',
-        align: 'center', wordWrap: { width: w - PAD * 2 },
+        align: 'center', wordWrap: { width: w - CARD_PAD * 2 },
       })
       .setOrigin(0.5, 0),
   );
@@ -66,7 +43,7 @@ export function createHeroCard(
   // Tags are the synergy axis the recruit roll anchors on, so they ride the card.
   card.add(
     scene.add
-      .text(0, h / 2 - PAD - 33, tagStrip(hero), {
+      .text(0, h / 2 - CARD_PAD - 33, tagStrip(hero), {
         fontFamily: 'Lato', fontSize: '12px', color: BOON_MUTED, fontStyle: 'bold',
       })
       .setOrigin(0.5, 0),
@@ -74,52 +51,26 @@ export function createHeroCard(
 
   card.add(
     scene.add
-      .text(0, h / 2 - PAD - 14, statStrip(hero), {
+      .text(0, h / 2 - CARD_PAD - 14, statStrip(hero), {
         fontFamily: 'Lato', fontSize: '13px', color: BOON_CREAM,
       })
       .setOrigin(0.5, 0),
   );
 
-  card.add(
-    scene.add
-      .text(-w / 2 + PAD, -h / 2 + PAD, RARITY_LABEL[hero.rarity], {
-        fontFamily: 'Lato', fontSize: '12px', fontStyle: 'bold',
-        color: `#${RARITY_COLOR[hero.rarity].toString(16).padStart(6, '0')}`,
-      })
-      .setOrigin(0, 0),
-  );
-
-  // The price owns the top-right corner; the passive star steps aside for it.
-  if (opts.price !== undefined) {
-    card.add(
-      scene.add
-        .text(w / 2 - PAD, -h / 2 + PAD, `${opts.price}G`, {
-          fontFamily: 'Lato', fontSize: '20px', fontStyle: 'bold',
-          color: opts.locked ? '#8a8f9e' : '#ffd76b',
-        })
-        .setOrigin(1, 0),
-    );
-  }
-
   // A star marks the passive; the hold-to-inspect card spells it out.
   if (hero.passive) {
     card.add(
       scene.add
-        .text(w / 2 - PAD - (opts.price !== undefined ? 46 : 0), -h / 2 + PAD, '★', {
+        .text(w / 2 - CARD_PAD - (opts.price !== undefined ? 46 : 0), -h / 2 + CARD_PAD, '★', {
           fontFamily: 'Lato', fontSize: '18px', color: BOON_GOLD,
         })
         .setOrigin(1, 0),
     );
   }
 
-  if (opts.locked) {
-    card.setAlpha(0.45);
-    bg.setFillStyle(0x0b0d18, 0.95);
-  }
-
   // The role accent under the card is the only cue for where it may be dropped.
   card.addAt(
-    scene.add.rectangle(0, h / 2 - 2, w - PAD * 2, 3, ROLE_COLOR[hero.role], 0.9),
+    scene.add.rectangle(0, h / 2 - 2, w - CARD_PAD * 2, 3, ROLE_COLOR[hero.role], 0.9),
     1,
   );
 
