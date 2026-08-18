@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { Ability, AbilityBuff, HeroDef, HeroRole } from '../types';
 import { tagStrip } from '../data/heroes';
-import { PASSIVE_LEVEL, passiveOf } from '../data/progression';
+import { RARITY_LABEL } from '../data/rarity';
 import { BASE_POWER, scaleByPower } from '../data/statMath';
 import { GAME_HEIGHT, GAME_WIDTH, ROLE_COLOR } from './layout';
 import { STAT_COLOR, drawStatIcon, heroStatRows, type StatRow } from './statDisplay';
@@ -23,12 +23,8 @@ const ROLE_LABEL: Record<HeroRole, string> = { tank: 'TANK', dps: 'DPS', heal: '
 const CREAM = '#f3e6c8';
 const MUTED = '#9aa3b8';
 const GOLD = '#ffd76b';
-/** Dimmed gold: a passive the hero has not reached the level for yet. */
-const LOCKED = '#6b6552';
 
 const secs = (ms: number): string => `${(ms / 1000).toFixed(1)}s`;
-/** Roster entries carry no level — they read as 1 until progression is folded in. */
-export const heroLevel = (hero: HeroDef): number => hero.level ?? 1;
 const hex = (color: number): string => `#${color.toString(16).padStart(6, '0')}`;
 
 const BUFF_TARGET_LABEL: Record<AbilityBuff['target'], string> = {
@@ -98,8 +94,8 @@ export class HeroTooltip {
     const accent = hex(ROLE_COLOR[hero.role]);
 
     let y = PAD;
-    // Level sits on the name line: it is what every number under it was grown by.
-    this.right(`LVL ${heroLevel(hero)}`, 20, GOLD, y + 6);
+    // Rarity sits on the name line: it is what the shop charges for this hero.
+    this.right(RARITY_LABEL[hero.rarity], 18, GOLD, y + 6);
     y = this.line(hero.name.toUpperCase(), 26, accent, y, 'bold');
     y = this.line(ROLE_LABEL[hero.role], 16, MUTED, y);
     y = this.line(tagStrip(hero), 15, GOLD, y) + GAP;
@@ -142,18 +138,14 @@ export class HeroTooltip {
     this.root.setVisible(false);
   }
 
-  /**
-   * The passive, unlocked or not. A locked one still shows its name and what it will do —
-   * knowing what level 5 buys is the reason to level a hero at all.
-   */
+  /** The hero's passive — always live, so there is no locked state to draw. */
   private passiveBlock(hero: HeroDef, y: number): number {
-    const passive = hero.passive ?? passiveOf(hero.id);
+    const { passive } = hero;
     if (!passive) return y;
-    const unlocked = !!hero.passive;
 
-    this.right(unlocked ? 'PASSIVE' : `LVL ${PASSIVE_LEVEL}`, 16, unlocked ? MUTED : LOCKED, y + 6);
-    let next = this.line(passive.name.toUpperCase(), 22, unlocked ? GOLD : LOCKED, y, 'bold');
-    next = this.line(passive.text, 18, unlocked ? CREAM : LOCKED, next) + GAP;
+    this.right('PASSIVE', 16, MUTED, y + 6);
+    let next = this.line(passive.name.toUpperCase(), 22, GOLD, y, 'bold');
+    next = this.line(passive.text, 18, CREAM, next) + GAP;
     return this.rule(next);
   }
 

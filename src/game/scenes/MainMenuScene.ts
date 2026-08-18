@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import { createUnitSprite, playUnitAnim } from '../UnitAnimator';
-import { gold } from '../../engine/ProgressionStore';
+import { RunState } from '../../engine/RunState';
 
 export class MainMenuScene extends Phaser.Scene {
   constructor() {
@@ -31,7 +31,7 @@ export class MainMenuScene extends Phaser.Scene {
       shadow: { offsetX: 2, offsetY: 4, color: '#000000', blur: 8, fill: true },
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, height * 0.21, 'Seven heroes. One boss.', {
+    this.add.text(width / 2, height * 0.21, 'Seven heroes. One boss after another.', {
       fontSize: '20px',
       fontFamily: 'Georgia, serif',
       color: '#c0a060',
@@ -40,23 +40,14 @@ export class MainMenuScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     this.buildStartButton(width / 2, height * 0.8);
-    // The team page owns the collection now, so the shop is the only other stop.
-    this.buildMenuLink(width / 2, height * 0.89, `SHOP · ${gold()}G`, 'ShopScene');
-  }
-
-  /** A plain text link down to one of the between-run pages. */
-  private buildMenuLink(x: number, y: number, text: string, sceneKey: string): void {
-    const label = this.add.text(x, y, text, {
-      fontSize: '22px',
+    // Nothing survives a run, so there is nothing to visit between runs — one button.
+    this.add.text(width / 2, height * 0.89, 'Every run starts with the same seven.', {
+      fontSize: '18px',
       fontFamily: 'Georgia, serif',
       color: '#c0a060',
       stroke: '#1a0a00',
-      strokeThickness: 4,
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-
-    label.on('pointerover', () => label.setColor('#ffe080'));
-    label.on('pointerout', () => label.setColor('#c0a060'));
-    label.on(Phaser.Input.Events.GAMEOBJECT_POINTER_UP, () => this.scene.start(sceneKey));
+      strokeThickness: 3,
+    }).setOrigin(0.5);
   }
 
   /** Scale an image to cover the portrait canvas without distorting it. */
@@ -71,7 +62,7 @@ export class MainMenuScene extends Phaser.Scene {
     const btn = this.add.image(x, y, 'btn_confirm').setInteractive({ useHandCursor: true });
     const btnGlow = this.add.image(x, y, 'btn_confirm_glow').setAlpha(0);
 
-    const label = this.add.text(x, y, 'FIGHT BOSS', {
+    const label = this.add.text(x, y, 'NEW RUN', {
       fontSize: '20px',
       fontFamily: 'Georgia, serif',
       color: '#ffffff',
@@ -94,7 +85,7 @@ export class MainMenuScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       this.cameras.main.fadeOut(400, 0, 0, 0, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
         if (progress === 1) {
-          this.scene.start('TeamScene');
+          this.scene.start('BossFightScene', { run: new RunState() });
         }
       });
     });

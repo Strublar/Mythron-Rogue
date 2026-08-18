@@ -112,6 +112,45 @@ export const SHIELD_ORACLE: Ability = {
   manaCost: 65, allyShield: 480,
 };
 
+// ── Starters ──────────────────────────────────────────────────────────────────
+// The seven a run opens with. Same shapes as the roster above at roughly two thirds
+// the payload — they are the floor the interlude upgrades away from.
+
+export const SQUIRE_GUARD: Ability = {
+  id: 'squire_guard', name: 'Squire Guard', targetKind: 'boss',
+  manaCost: 70, damage: 80, selfShield: 160, taunt: true,
+};
+
+export const SCALED_HIDE: Ability = {
+  id: 'scaled_hide', name: 'Scaled Hide', targetKind: 'boss',
+  manaCost: 75, damage: 60, selfShield: 200, taunt: true,
+};
+
+export const SHADOW_NIP: Ability = {
+  id: 'shadow_nip', name: 'Shadow Nip', targetKind: 'boss',
+  manaCost: 55, damage: 190,
+};
+
+export const POUNCE: Ability = {
+  id: 'pounce', name: 'Pounce', targetKind: 'boss',
+  manaCost: 65, damage: 150, buff: { target: 'self', durationMs: 5000, attackSpeedPct: 35 },
+};
+
+export const SAND_CUT: Ability = {
+  id: 'sand_cut', name: 'Sand Cut', targetKind: 'boss',
+  manaCost: 45, damage: 100, dot: { damage: 22, tickMs: 1000, durationMs: 4000 },
+};
+
+export const BAMBOO_BALM: Ability = {
+  id: 'bamboo_balm', name: 'Bamboo Balm', targetKind: 'ally',
+  manaCost: 50, heal: 170,
+};
+
+export const ROOTED_CALM: Ability = {
+  id: 'rooted_calm', name: 'Rooted Calm', targetKind: 'ally',
+  manaCost: 60, heal: 100, allyShield: 160,
+};
+
 // ── Generals ──────────────────────────────────────────────────────────────────
 // A general opens the run alone, so each one carries its own sustain or safety net
 // on top of its damage — no healer exists yet to cover it.

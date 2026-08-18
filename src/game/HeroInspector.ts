@@ -34,16 +34,19 @@ export class HeroInspector {
     scene.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cancel());
   }
 
-  /** Invisible press zones over every filled seat — for scenes that draw no heroes of their own. */
-  addProbes(seats: readonly (HeroDef | null)[]): void {
-    for (const { def, slot } of seatedSlots(seats)) {
+  /**
+   * Invisible press zones over every filled seat — for scenes that draw no heroes of their
+   * own. Returned so a scene that reseats heroes can destroy the stale probes first.
+   */
+  addProbes(seats: readonly (HeroDef | null)[]): Phaser.GameObjects.Zone[] {
+    return seatedSlots(seats).map(({ def, slot }) =>
       this.scene.add
         .zone(slot.x, slot.y, PROBE_W, PROBE_H)
         .setDepth(PROBE_DEPTH)
         .setInteractive()
         .on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.press(def, slot.x, slot.y))
-        .on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => this.cancel());
-    }
+        .on(Phaser.Input.Events.GAMEOBJECT_POINTER_OUT, () => this.cancel()),
+    );
   }
 
   /** Arms the press timer. Call from an existing pointer-down handler. */

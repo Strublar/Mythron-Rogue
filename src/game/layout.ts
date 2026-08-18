@@ -42,8 +42,8 @@ export const HERO_SLOTS: Record<HeroRole, { x: number; y: number }[]> = {
 };
 
 /**
- * The party's seven seats in row order. The team is built between runs and never changes
- * during one, but a half-built team is a sparse seat array, not a list.
+ * The party's seven seats in row order. A run always fields all seven — the interlude
+ * swaps occupants rather than filling gaps — but the array stays sparse-tolerant.
  */
 export const PARTY_SEATS: { role: HeroRole; index: number }[] = [
   { role: 'tank', index: 0 },

@@ -1,6 +1,5 @@
 import Phaser from 'phaser';
 import { UNIT_DEFS } from '../UnitAnimator';
-import { PRISMATIC_TEXTURES } from '../PrismaticFx';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -9,7 +8,6 @@ export class BootScene extends Phaser.Scene {
 
   preload(): void {
     this.loadUnitAtlases();
-    this.loadPrismatic();
     this.load.image('menu_bg', 'resources/scenes/shimzar/bg.jpg');
     this.load.image('menu_midground', 'resources/scenes/shimzar/midground.png');
     this.load.image('menu_vignette', 'resources/scenes/shimzar/vignette.png');
@@ -25,13 +23,6 @@ export class BootScene extends Phaser.Scene {
     for (const [unitKey, def] of Object.entries(UNIT_DEFS)) {
       const base = `resources/units/${unitKey}`;
       this.load.atlas(def.atlasKey, `${base}.png`, `${base}_atlas.json`);
-    }
-  }
-
-  /** Gradients, rays and the spark streak behind the prismatic card treatment. */
-  private loadPrismatic(): void {
-    for (const [key, path] of Object.entries(PRISMATIC_TEXTURES)) {
-      this.load.image(key, path);
     }
   }
 
