@@ -42,8 +42,8 @@ export const HERO_SLOTS: Record<HeroRole, { x: number; y: number }[]> = {
 };
 
 /**
- * The party's seven seats in row order. A run starts with only one of them filled and
- * fills the rest as units are drafted, so a party is a sparse seat array, not a list.
+ * The party's seven seats in row order. The team is built between runs and never changes
+ * during one, but a half-built team is a sparse seat array, not a list.
  */
 export const PARTY_SEATS: { role: HeroRole; index: number }[] = [
   { role: 'tank', index: 0 },
@@ -56,9 +56,6 @@ export const PARTY_SEATS: { role: HeroRole; index: number }[] = [
 ];
 
 export const SEAT_COUNT = PARTY_SEATS.length;
-
-/** The general opens the run alone, so it takes the centre dps seat. */
-export const GENERAL_SEAT = 3;
 
 export function seatSlot(seat: number): { x: number; y: number } {
   const { role, index } = PARTY_SEATS[seat];

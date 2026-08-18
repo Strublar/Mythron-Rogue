@@ -1,64 +1,58 @@
 import Phaser from 'phaser';
-import { bossForLevel } from '../../data/bosses';
+import { bossForDifficulty } from '../../data/bosses';
 import { FightEngine } from '../../engine/FightEngine';
 import type { ExpGain } from '../../engine/ProgressionStore';
-import { grantRunExp, grantRunGold } from '../../engine/ProgressionStore';
-import { RunState } from '../../engine/RunState';
-import type { FightEvent, HeroDef } from '../../types';
+import { grantRunExp, grantRunGold, recordClear } from '../../engine/ProgressionStore';
+import type { FightEvent, FightOutcome, HeroDef } from '../../types';
 import { CombatantView } from '../CombatantView';
 import { DragCastController } from '../DragCastController';
 import { HeroInspector } from '../HeroInspector';
 import { STAT_COLOR } from '../statDisplay';
 import { createButton } from '../ui';
-import type { InterludeData } from './InterludeScene';
 import {
   BOSS_ANCHOR, BOSS_BAR_Y, BOSS_GROUND_Y, BOSS_SCALE, GAME_HEIGHT, GAME_WIDTH,
   HERO_BAR_DY, HERO_GROUND_DY, HERO_SCALE, ROLE_COLOR, seatSlot,
 } from '../layout';
 
-/** Pause between a boss dying and the between-fights screen opening. */
-const NEXT_BOSS_DELAY_MS = 1400;
+/** Pause between the boss dying and the result screen, so the death animation plays out. */
+const RESULT_DELAY_MS = 1400;
 
-/** The general picked on the selection screen — it opens the run alone. */
+/** One run, one boss: the team as the team page seated it, and the rung it picked. */
 export interface BossFightData {
-  general: HeroDef;
+  team: HeroDef[];
+  difficulty: number;
 }
 
 export class BossFightScene extends Phaser.Scene {
   private engine!: FightEngine;
-  private run!: RunState;
-  private general!: HeroDef;
+  private team!: HeroDef[];
+  private difficulty = 1;
   private bossView!: CombatantView;
   private heroViews!: Map<string, CombatantView>;
   private dragCast!: DragCastController;
   private inspector!: HeroInspector;
-  private bossNameText!: Phaser.GameObjects.Text;
-  private levelText!: Phaser.GameObjects.Text;
   private startHint!: Phaser.GameObjects.Text;
   private ended = false;
-  /** True while the between-fights screen is up: the sim stops, the sprites keep idling. */
-  private frozen = false;
 
   constructor() {
     super({ key: 'BossFightScene' });
   }
 
   init(data: BossFightData): void {
-    this.general = data.general;
+    this.team = data.team;
+    this.difficulty = data.difficulty;
   }
 
   create(): void {
     this.ended = false;
-    this.frozen = false;
     this.drawBackground();
 
-    // Each entry into the scene is a brand new run: the general starts it alone.
-    this.run = new RunState(this.general);
-    const firstBoss = bossForLevel(1);
-    this.engine = new FightEngine(this.run.party(), firstBoss);
+    // The team is fixed for the whole run — it was built on the team page, not here.
+    const boss = bossForDifficulty(this.difficulty);
+    this.engine = new FightEngine(this.team, boss);
 
     this.bossView = new CombatantView(this, {
-      unitKey: firstBoss.unitKey,
+      unitKey: boss.unitKey,
       x: BOSS_ANCHOR.x,
       y: BOSS_ANCHOR.y,
       scale: BOSS_SCALE,
@@ -69,14 +63,15 @@ export class BossFightScene extends Phaser.Scene {
       barFill: 0xd7443e,
       barText: true,
     });
-    this.bossNameText = this.add
-      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 34, firstBoss.name.toUpperCase(), {
+    // The boss and its rung never change mid-run, so neither caption needs keeping.
+    this.add
+      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 34, boss.name.toUpperCase(), {
         fontFamily: 'Lato', fontSize: '28px', color: '#f3e6c8', fontStyle: 'bold',
         stroke: '#000000', strokeThickness: 4,
       })
       .setOrigin(0.5);
-    this.levelText = this.add
-      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 66, 'LEVEL 1', {
+    this.add
+      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 66, `DIFFICULTY ${this.difficulty}`, {
         fontFamily: 'Lato', fontSize: '20px', color: '#ffd76b', fontStyle: 'bold',
         stroke: '#000000', strokeThickness: 4,
       })
@@ -89,16 +84,18 @@ export class BossFightScene extends Phaser.Scene {
     // Opening the card kills the pending drag, so releasing over the boss never casts.
     this.inspector.onOpen = () => this.dragCast.cancel();
 
-    for (const { def, slot } of this.run.placed()) this.addHeroView(def, slot);
+    // The team arrives in seat order, so its index *is* its seat.
+    this.team.forEach((def, seat) => this.addHeroView(def, seatSlot(seat)));
 
     this.engine.on('fight', (e: FightEvent) => this.onFightEvent(e));
     this.refreshViews();
+    this.announceDifficulty();
   }
 
   /**
    * Seats one hero on the battlefield: sprite, bars, drag-cast and the long-press stats
-   * card. Used for the general at run start and for every unit drafted between fights.
-   * Until the opening cast nobody is swinging, so a hold reads the card instead of dragging.
+   * card. Until the opening cast nobody is swinging, so a hold reads the card instead of
+   * dragging.
    */
   private addHeroView(def: HeroDef, slot: { x: number; y: number }): void {
     const view = new CombatantView(this, {
@@ -156,9 +153,6 @@ export class BossFightScene extends Phaser.Scene {
     const heroView = e.heroId ? this.heroViews.get(e.heroId) : undefined;
 
     switch (e.type) {
-      case 'boss_spawn':
-        this.onBossSpawn();
-        break;
       case 'fight_start':
         this.startHint.setVisible(false);
         // Once blades are out, hero pointer-down belongs to drag-cast alone.
@@ -202,68 +196,19 @@ export class BossFightScene extends Phaser.Scene {
         break;
       case 'end':
         this.dragCast.cancel();
-        // A cleared boss only ends the *fight*; the run continues one level deeper.
-        if (e.outcome === 'victory') {
-          this.bossView.playDeath();
-          this.time.delayedCall(NEXT_BOSS_DELAY_MS, () => this.openInterlude());
-        } else {
-          this.showRunOverOverlay(e.level ?? this.engine.level);
-        }
+        this.ended = true;
+        // The run is the fight: either outcome ends it, once the death plays out.
+        if (e.outcome === 'victory') this.bossView.playDeath();
+        this.time.delayedCall(
+          RESULT_DELAY_MS, () => this.showResultOverlay(e.outcome ?? 'defeat'),
+        );
         break;
     }
   }
 
-  /**
-   * Stops the sim behind the between-fights screen without pausing the scene — a paused
-   * scene freezes its UpdateList, and the party should keep idling under the boon window.
-   * Input goes off instead, so drag-casts cannot fire and pointers reach the interlude only.
-   */
-  private openInterlude(): void {
-    if (this.ended) return;
-    this.frozen = true;
-    this.input.enabled = false;
-    // Input goes dead here, so anything still in flight would never see its pointer-up.
-    this.dragCast.cancel();
-    this.inspector.cancel();
-    const data: InterludeData = {
-      clearedLevel: this.engine.level,
-      run: this.run,
-      onDone: drafted => this.resumeRun(drafted),
-    };
-    this.scene.launch('InterludeScene', data);
-  }
-
-  /** Seats the drafted unit — if any — then sends the party into the next boss. */
-  private resumeRun(drafted?: HeroDef): void {
-    if (this.ended) return;
-    this.frozen = false;
-    this.input.enabled = true;
-
-    if (drafted) {
-      const seat = this.run.addUnit(drafted);
-      if (seat >= 0) this.addHeroView(drafted, seatSlot(seat));
-    }
-
-    this.engine.startNextBoss(bossForLevel(this.engine.level + 1), this.run.party());
-  }
-
-  /** Resets every bar and sprite for the freshly spawned boss and the restored party. */
-  private onBossSpawn(): void {
-    const { level, boss } = this.engine;
-    this.bossNameText.setText(boss.def.name.toUpperCase());
-    this.levelText.setText(`LEVEL ${level}`);
-    this.bossView.revive();
-    for (const view of this.heroViews.values()) view.revive();
-    this.startHint.setVisible(true);
-    // A fresh boss re-opens the idle window: stats are inspectable again.
-    this.inspector.enabled = true;
-    this.refreshViews();
-    this.announceLevel(level);
-  }
-
-  private announceLevel(level: number): void {
+  private announceDifficulty(): void {
     const banner = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `LEVEL ${level}`, {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `DIFFICULTY ${this.difficulty}`, {
         fontFamily: 'Lato', fontSize: '72px', fontStyle: 'bold', color: '#ffd76b',
         stroke: '#000000', strokeThickness: 6,
       })
@@ -280,7 +225,7 @@ export class BossFightScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    if (!this.ended && !this.frozen) this.engine.tick(delta);
+    if (!this.ended) this.engine.tick(delta);
     this.refreshViews();
     this.dragCast.refresh(delta, this.input.activePointer);
   }
@@ -301,44 +246,82 @@ export class BossFightScene extends Phaser.Scene {
     }
   }
 
-  private showRunOverOverlay(highestLevel: number): void {
-    this.ended = true;
-    // The run is over: the party banks its exp and gold before the screen even draws.
-    const gains = grantRunExp(this.run.party(), highestLevel);
-    const earnedGold = grantRunGold(highestLevel);
+  /**
+   * The run's one result screen. A clear pays exp and gold and opens the next rung; a wipe
+   * pays nothing at all, so the only way up the ladder is through the boss.
+   */
+  private showResultOverlay(outcome: FightOutcome): void {
+    const won = outcome === 'victory';
     const depth = 200;
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setDepth(depth);
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, 'RUN OVER', {
-        fontFamily: 'Lato', fontSize: '64px', fontStyle: 'bold', color: '#ff8a80',
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 200, won ? 'VICTORY' : 'DEFEAT', {
+        fontFamily: 'Lato', fontSize: '64px', fontStyle: 'bold', color: won ? '#ffd76b' : '#ff8a80',
       })
       .setOrigin(0.5)
       .setDepth(depth);
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 60, 'HIGHEST LEVEL', {
-        fontFamily: 'Lato', fontSize: '24px', color: '#f3e6c8',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-    this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 10, `${highestLevel}`, {
-        fontFamily: 'Lato', fontSize: '72px', fontStyle: 'bold', color: '#ffd76b',
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, `DIFFICULTY ${this.difficulty}`, {
+        fontFamily: 'Lato', fontSize: '28px', fontStyle: 'bold', color: '#f3e6c8',
       })
       .setOrigin(0.5)
       .setDepth(depth);
 
-    const reportBottom = this.drawExpReport(gains, earnedGold, GAME_HEIGHT / 2 + 60, depth);
+    const bottom = won ? this.drawVictoryReport(depth) : this.drawDefeatNote(depth);
+    // Thumb-reachable by default, pushed down only if a long level-up list needs the room.
+    const buttonY = Math.max(bottom + 80, GAME_HEIGHT - 180);
 
-    // A new run means a new general — back to the selection screen, not a blind restart.
     createButton(
-      this, GAME_WIDTH / 2, reportBottom + 80, 'RETRY',
-      () => this.scene.start('GeneralSelectScene'), depth,
+      this, GAME_WIDTH / 2 - 176, buttonY, won ? 'CONTINUE' : 'TEAM',
+      () => this.scene.start('TeamScene'), depth,
+    );
+    createButton(
+      this, GAME_WIDTH / 2 + 176, buttonY, 'RETRY',
+      () => this.scene.start('BossFightScene', { team: this.team, difficulty: this.difficulty }),
+      depth,
     );
   }
 
+  /** Banks the clear, then reports what it paid. Returns the bottom of the report. */
+  private drawVictoryReport(depth: number): number {
+    const gains = grantRunExp(this.team, this.difficulty);
+    const earnedGold = grantRunGold(this.difficulty);
+    const unlocked = recordClear(this.difficulty);
+
+    let y = GAME_HEIGHT / 2 - 80;
+    if (unlocked) {
+      this.add
+        .text(GAME_WIDTH / 2, y, `DIFFICULTY ${this.difficulty + 1} UNLOCKED`, {
+          fontFamily: 'Lato', fontSize: '26px', fontStyle: 'bold', color: '#8ef2a5',
+        })
+        .setOrigin(0.5)
+        .setDepth(depth);
+      y += 50;
+    }
+    return this.drawExpReport(gains, earnedGold, y, depth);
+  }
+
+  /** A wipe pays nothing — say so plainly rather than showing an empty report. */
+  private drawDefeatNote(depth: number): number {
+    const y = GAME_HEIGHT / 2 - 60;
+    this.add
+      .text(GAME_WIDTH / 2, y, 'NO REWARDS — THE BOSS MUST FALL', {
+        fontFamily: 'Lato', fontSize: '22px', color: '#9aa3b8',
+      })
+      .setOrigin(0.5)
+      .setDepth(depth);
+    this.add
+      .text(GAME_WIDTH / 2, y + 40, 'Level your team or drop a difficulty', {
+        fontFamily: 'Lato', fontSize: '20px', color: '#9aa3b8',
+      })
+      .setOrigin(0.5)
+      .setDepth(depth);
+    return y + 40;
+  }
+
   /**
-   * What the run paid: flat exp for everyone, gold for the purse, then whoever leveled.
-   * Returns its bottom so the RETRY button can sit under it.
+   * What the clear paid: flat exp for everyone, gold for the purse, then whoever leveled.
+   * Returns its bottom so the buttons can sit under it.
    */
   private drawExpReport(gains: ExpGain[], earnedGold: number, y: number, depth: number): number {
     const earned = gains[0]?.exp ?? 0;

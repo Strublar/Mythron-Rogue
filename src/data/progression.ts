@@ -21,9 +21,9 @@ export const LEVEL_GROWTH: BoonEffect = {
 /** Exp needed to leave the level at this index. Index 0 is unused; index 10 is the cap. */
 const EXP_TO_NEXT = [0, 20, 30, 45, 60, 80, 100, 125, 150, 180, 0];
 
-/** Exp a run of `runLevel` bosses hands each hero that fought it. */
+/** Exp a boss cleared on a given difficulty hands each hero that fought it. */
 const RUN_EXP_BASE = 10;
-const RUN_EXP_PER_LEVEL = 10;
+const RUN_EXP_PER_DIFFICULTY = 10;
 
 export const STARTING_PROGRESS: HeroProgress = { level: 1, exp: 0 };
 
@@ -36,9 +36,9 @@ export function isMaxLevel(p: HeroProgress): boolean {
   return p.level >= MAX_HERO_LEVEL;
 }
 
-/** Deeper runs pay better. `runLevel` is the highest boss level the party reached. */
-export function runExp(runLevel: number): number {
-  return RUN_EXP_BASE + RUN_EXP_PER_LEVEL * Math.max(0, runLevel - 1);
+/** Harder rungs pay better. Only a cleared boss pays at all. */
+export function runExp(difficulty: number): number {
+  return RUN_EXP_BASE + RUN_EXP_PER_DIFFICULTY * Math.max(0, difficulty - 1);
 }
 
 /** Banks `gain` exp, rolling levels over. Returns a fresh progress — never mutates. */

@@ -40,9 +40,8 @@ export class MainMenuScene extends Phaser.Scene {
     }).setOrigin(0.5);
 
     this.buildStartButton(width / 2, height * 0.8);
-    // Both between-run pages hang off the menu — neither needs a run to exist.
-    this.buildMenuLink(width * 0.3, height * 0.89, 'COLLECTION', 'CollectionScene');
-    this.buildMenuLink(width * 0.7, height * 0.89, `SHOP · ${gold()}G`, 'ShopScene');
+    // The team page owns the collection now, so the shop is the only other stop.
+    this.buildMenuLink(width / 2, height * 0.89, `SHOP · ${gold()}G`, 'ShopScene');
   }
 
   /** A plain text link down to one of the between-run pages. */
@@ -95,7 +94,7 @@ export class MainMenuScene extends Phaser.Scene {
     btn.on('pointerdown', () => {
       this.cameras.main.fadeOut(400, 0, 0, 0, (_cam: Phaser.Cameras.Scene2D.Camera, progress: number) => {
         if (progress === 1) {
-          this.scene.start('GeneralSelectScene');
+          this.scene.start('TeamScene');
         }
       });
     });
