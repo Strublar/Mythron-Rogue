@@ -37,11 +37,15 @@ export function createHeroCard(
 ): Phaser.GameObjects.Container {
   // The hit area lives with the card, not with whoever wires up a gesture: a locked
   // card takes no drag but still opens its stats card, so both must hit the same box.
+  // Phaser hit-tests a container in *origin space* — it adds the display origin to the
+  // local point before calling Contains — so the box runs (0,0)→(w,h), not (-w/2,-h/2).
+  // A centred rectangle here lands half a card to the left, which is how a press on one
+  // card used to grab its neighbour (or nothing at all past the right-hand edge).
   const card = scene.add
     .container(x, y)
     .setDepth(depth)
     .setSize(w, h)
-    .setInteractive(new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h), Phaser.Geom.Rectangle.Contains);
+    .setInteractive(new Phaser.Geom.Rectangle(0, 0, w, h), Phaser.Geom.Rectangle.Contains);
 
   const bg = scene.add
     .rectangle(0, 0, w, h, IDLE, 0.95)
