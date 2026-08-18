@@ -5,8 +5,12 @@ import { HERO_TOUCH, seatedSlots } from './layout';
 
 /** Hold this long on a hero before its stats card opens. */
 const LONG_PRESS_MS = 300;
-/** Past this much travel the gesture is a drag, not a press. */
-const MOVE_TOLERANCE = 12;
+/**
+ * Past this much travel the gesture is a drag, not a press. Game units: the 720-wide
+ * canvas fits into ~390 CSS px on a phone, so 20 here is ~11 px of finger — under that
+ * a thumb resting on a hero wobbles enough to cancel its own long press.
+ */
+const MOVE_TOLERANCE = 20;
 const PROBE_DEPTH = 5;
 
 /**

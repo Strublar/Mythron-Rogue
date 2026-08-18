@@ -65,10 +65,9 @@ export class SeatDragController {
     if (!drag) return;
     // A tap that never travelled is not a drop — it belongs to the long-press inspect.
     const travelled = Phaser.Math.Distance.Between(drag.from.x, drag.from.y, p.x, p.y);
-    // The card, not the finger, is what the player aims: test from where the card sits.
-    const seat = travelled > DRAG_THRESHOLD
-      ? this.seatUnder(p.x + drag.grab.x, p.y + drag.grab.y)
-      : -1;
+    // The finger is what the player aims — the card is 224 wide, so a card-centre test
+    // makes an edge grab undroppable: the centre stays up to half a card off the seat.
+    const seat = travelled > DRAG_THRESHOLD ? this.seatUnder(p.x, p.y) : -1;
 
     this.cancel();
     if (seat >= 0) this.onDrop(drag.hero, seat);
