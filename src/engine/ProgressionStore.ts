@@ -3,6 +3,7 @@ import {
   DUPE_EXP, ORB_PRICE, PRISMATIC_EXP_MULT, rollOrb, rollPrismatic, runGold,
 } from '../data/orbs';
 import { PASSIVE_LEVEL, STARTING_PROGRESS, addExp, applyProgress, runExp } from '../data/progression';
+import { PARTY_SEATS, SEAT_COUNT } from '../game/layout';
 import type { AccountState, HeroDef, HeroProgress, OrbPull } from '../types';
 
 const STORAGE_KEY = 'mythron.progression.v2';
@@ -30,8 +31,15 @@ export interface ExpGain {
 
 function load(): AccountState {
   if (account) return account;
-  // A fresh account owns the seven default picks — exactly one legal party.
-  account = { heroes: {}, owned: [...DEFAULT_PARTY_IDS], prismatic: [], gold: 0 };
+  // A fresh account owns the seven default picks — exactly one legal party, already seated.
+  account = {
+    heroes: {},
+    owned: [...DEFAULT_PARTY_IDS],
+    prismatic: [],
+    gold: 0,
+    team: defaultTeam(),
+    maxDifficulty: 1,
+  };
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (raw) {
@@ -46,6 +54,11 @@ function load(): AccountState {
         for (const id of parsed.prismatic) if (typeof id === 'string') grantPrismatic(id);
       }
       if (typeof parsed.gold === 'number' && parsed.gold >= 0) account.gold = parsed.gold;
+      // Saves written before the team was built between runs keep the default seating.
+      if (Array.isArray(parsed.team)) account.team = readTeam(parsed.team);
+      if (typeof parsed.maxDifficulty === 'number' && parsed.maxDifficulty >= 1) {
+        account.maxDifficulty = Math.floor(parsed.maxDifficulty);
+      }
     } else {
       // No v2 save: carry the levels a pre-collection save had earned.
       const legacy = window.localStorage.getItem(LEGACY_KEY);
@@ -55,6 +68,30 @@ function load(): AccountState {
     // Private browsing or corrupt data: progression simply starts over.
   }
   return account;
+}
+
+/** The starters seated into the 2/3/2 they were picked to fill. */
+function defaultTeam(): (string | null)[] {
+  const pool = DEFAULT_PARTY_IDS.map(id => ROSTER.find(h => h.id === id)).filter(Boolean) as HeroDef[];
+  return PARTY_SEATS.map(seat => {
+    const i = pool.findIndex(h => h.role === seat.role);
+    return i >= 0 ? pool.splice(i, 1)[0].id : null;
+  });
+}
+
+/**
+ * A saved team, normalised: seven seats, no id twice, and a hero only where its role fits.
+ * Anything else — a shorter array, a renamed hero — reads as an empty seat.
+ */
+function readTeam(saved: unknown[]): (string | null)[] {
+  const seen = new Set<string>();
+  return PARTY_SEATS.map((seat, i) => {
+    const id = saved[i];
+    if (typeof id !== 'string' || seen.has(id)) return null;
+    if (ROSTER.find(h => h.id === id)?.role !== seat.role) return null;
+    seen.add(id);
+    return id;
+  });
 }
 
 function readHeroes(table: ProgressTable | undefined): void {
@@ -115,11 +152,56 @@ export function gold(): number {
 }
 
 /**
- * Pays out a finished run. `party` is the run's roster (any derived copy will do — only
- * ids are read) and `runLevel` the deepest boss it reached. Persists immediately.
+ * The seated team, one entry per seat. A hero the account no longer owns reads as empty —
+ * ownership can only ever be gained today, but the team is the one place it would show.
  */
-export function grantRunExp(party: HeroDef[], runLevel: number): ExpGain[] {
-  const exp = runExp(runLevel);
+export function team(): (string | null)[] {
+  const { team: seats, owned } = load();
+  return seats.map(id => (id && owned.includes(id) ? id : null));
+}
+
+/** The seated team as fieldable defs: account level and passive folded in. */
+export function teamDefs(): (HeroDef | null)[] {
+  const roster = leveledRoster();
+  return team().map(id => roster.find(def => def.id === id) ?? null);
+}
+
+/**
+ * Seats a hero, or clears the seat with `null`. A hero already sitting somewhere else moves
+ * rather than duplicates, so a swap is a single tap. Persists immediately.
+ */
+export function setTeamSeat(seat: number, heroId: string | null): void {
+  const store = load();
+  if (seat < 0 || seat >= SEAT_COUNT) return;
+  if (heroId) {
+    const elsewhere = store.team.indexOf(heroId);
+    // Moving a seated hero leaves its old seat empty — the swap target, if any, is displaced.
+    if (elsewhere >= 0) store.team[elsewhere] = store.team[seat];
+  }
+  store.team[seat] = heroId;
+  save();
+}
+
+/** How far up the ladder the account may pick. */
+export function maxDifficulty(): number {
+  return load().maxDifficulty;
+}
+
+/** Banks a clear. Returns true when it opened the next rung — the overlay says so. */
+export function recordClear(difficulty: number): boolean {
+  const store = load();
+  if (difficulty < store.maxDifficulty) return false;
+  store.maxDifficulty = difficulty + 1;
+  save();
+  return true;
+}
+
+/**
+ * Pays out a cleared boss. `party` is the team that fought it (any derived copy will do —
+ * only ids are read) and `difficulty` the rung it was fought on. Persists immediately.
+ */
+export function grantRunExp(party: HeroDef[], difficulty: number): ExpGain[] {
+  const exp = runExp(difficulty);
   const store = load();
   const gains: ExpGain[] = [];
   // A hero fielded twice cannot happen, but ids are the key — dedupe defensively.
@@ -144,9 +226,9 @@ function crossedPassive(before: HeroProgress, after: HeroProgress): boolean {
   return before.level < PASSIVE_LEVEL && after.level >= PASSIVE_LEVEL;
 }
 
-/** Banks the run's gold alongside its exp. Returns what it paid, for the run-over screen. */
-export function grantRunGold(runLevel: number): number {
-  const earned = runGold(runLevel);
+/** Banks the run's gold alongside its exp. Returns what it paid, for the result screen. */
+export function grantRunGold(difficulty: number): number {
+  const earned = runGold(difficulty);
   load().gold += earned;
   save();
   return earned;

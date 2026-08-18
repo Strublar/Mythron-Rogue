@@ -89,13 +89,20 @@ export interface HeroProgress {
   exp: number;          // toward the next level
 }
 
-/** Everything that survives a run: per-hero levels, the heroes owned, and the purse. */
+/**
+ * Everything that survives a run: per-hero levels, the heroes owned, the purse, the team
+ * the player fields and how deep the difficulty ladder has been climbed.
+ */
 export interface AccountState {
   heroes: Record<string, HeroProgress>;
   owned: string[];
   /** Heroes owned in their prismatic variant. Cosmetic only — never touches stats. */
   prismatic: string[];
   gold: number;
+  /** The seven seats in `PARTY_SEATS` order — a hero id, or null for an empty seat. */
+  team: (string | null)[];
+  /** Highest difficulty ever cleared; the ladder is selectable up to this. */
+  maxDifficulty: number;
 }
 
 /** The result of one orb, for the shop's reveal panel. */
@@ -247,11 +254,10 @@ export interface BossState {
   dots: ActiveDot[];
 }
 
-/** 'victory' = the current boss is down; the run itself only ends on 'defeat'. */
+/** A run is one boss: 'victory' clears it, 'defeat' wipes the team. Both end the run. */
 export type FightOutcome = 'ongoing' | 'victory' | 'defeat';
 
 export type FightEventType =
-  | 'boss_spawn'
   | 'fight_start'
   | 'hero_taunt'
   | 'hero_attack'
@@ -277,5 +283,4 @@ export interface FightEvent {
   crit?: boolean;        // the attack or cast behind this rolled a critical
   amount?: number;
   outcome?: FightOutcome;
-  level?: number;        // run level (boss_spawn / end)
 }

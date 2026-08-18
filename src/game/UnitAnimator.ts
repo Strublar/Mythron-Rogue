@@ -66,11 +66,6 @@ export const UNIT_DEFS: Record<string, UnitDef> = Object.fromEntries(
   ].map(key => [key, standardUnit(key)]),
 );
 
-// The six faction generals — same six animations plus a `cast` the roster units lack.
-for (const key of ['f1_general', 'f2_general', 'f3_general', 'f4_general', 'f5_general', 'f6_general']) {
-  UNIT_DEFS[key] = { ...standardUnit(key), availableAnims: [...STANDARD_ANIMS, 'cast'] };
-}
-
 function animGlobalKey(unitKey: string, anim: UnitAnimKey): string {
   return `${unitKey}_${anim}`;
 }

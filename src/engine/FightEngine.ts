@@ -115,8 +115,6 @@ export class FightEngine extends Phaser.Events.EventEmitter {
   readonly heroes: HeroState[];
   readonly boss: BossState;
   outcome: FightOutcome = 'ongoing';
-  /** 1-based run level — how many bosses deep this run is. */
-  level = 1;
   /** The party (and the boss) hold their idle until the first ability of the fight. */
   started = false;
 
@@ -134,30 +132,6 @@ export class FightEngine extends Phaser.Events.EventEmitter {
       def: bossDef, hp: bossDef.maxHp, alive: true, attackCd: bossDef.attackIntervalMs, dots: [],
     };
     this.rebuildTriggers();
-  }
-
-  /**
-   * Next step of an endless run: swap in the scaled boss and restore the party
-   * (revived, full hp, full mana, no shield). `heroDefs` is the party as the
-   * interlude left it — a unit drafted between fights joins here.
-   */
-  startNextBoss(bossDef: BossDef, heroDefs: HeroDef[]): void {
-    this.level += 1;
-    this.boss.def = bossDef;
-    this.boss.hp = bossDef.maxHp;
-    this.boss.alive = true;
-    this.boss.attackCd = bossDef.attackIntervalMs;
-    this.boss.dots.length = 0;
-
-    // A fresh fight resets every hero anyway, so rebuild rather than patch — that is what
-    // lets a unit drafted in the interlude join the party mid-run.
-    this.heroes.length = 0;
-    this.heroes.push(...makeHeroStates(heroDefs));
-
-    this.outcome = 'ongoing';
-    this.started = false;
-    this.rebuildTriggers();
-    this.signal({ type: 'boss_spawn', level: this.level });
   }
 
   /** The run's boons. Stat boons are already baked into the defs — only triggers land here. */
@@ -586,6 +560,6 @@ export class FightEngine extends Phaser.Events.EventEmitter {
     if (!this.boss.alive) this.outcome = 'victory';
     else if (this.heroes.every(h => !h.alive)) this.outcome = 'defeat';
     else return;
-    this.signal({ type: 'end', outcome: this.outcome, level: this.level });
+    this.signal({ type: 'end', outcome: this.outcome });
   }
 }

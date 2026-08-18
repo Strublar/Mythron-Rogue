@@ -27,18 +27,14 @@ export const PRISMATIC_EXP_MULT = 2;
 /** Ascending, so the reveal and the odds list read in the same order everywhere. */
 export const RARITY_ORDER: HeroRarity[] = ['B', 'A', 'S'];
 
-/** A run pays this much for its first boss, before any level is cleared. */
-const GOLD_BASE = 25;
-/** Each cleared level pays GOLD_PER_LEVEL × its depth — later bosses are worth more. */
-const GOLD_PER_LEVEL = 10;
+/** What clearing the first rung of the ladder pays. Two orbs, so a win always buys one. */
+const GOLD_BASE = 10;
+/** Every rung above it pays this much more — climbing is what funds the collection. */
+const GOLD_PER_DIFFICULTY = 5;
 
-/**
- * Gold a run that reached `runLevel` banks. `runLevel` is the boss it died on, so it
- * cleared `runLevel - 1` of them; the payout is the triangular sum over those depths.
- */
-export function runGold(runLevel: number): number {
-  const cleared = Math.max(0, runLevel - 1);
-  return GOLD_BASE + (GOLD_PER_LEVEL * cleared * (cleared + 1)) / 2;
+/** Gold a boss cleared on `difficulty` banks. A defeat pays nothing and never calls this. */
+export function runGold(difficulty: number): number {
+  return GOLD_BASE + GOLD_PER_DIFFICULTY * Math.max(0, difficulty - 1);
 }
 
 export function heroesByRarity(rarity: HeroRarity): HeroDef[] {
