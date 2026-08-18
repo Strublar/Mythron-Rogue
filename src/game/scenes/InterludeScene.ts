@@ -123,14 +123,16 @@ export class InterludeScene extends Phaser.Scene {
       }
       const price = this.phase === 'shop' ? SHOP_PRICE[hero.rarity] : undefined;
       const locked = price !== undefined && !this.run.canAfford(price);
+      // `x` advances with the loop — pin it so every card opens its tooltip on itself.
+      const cardX = x;
       const card = createHeroCard(
-        this, x, CARD.y, CARD.w, CARD.h, hero, { price, locked }, CARD_DEPTH,
+        this, cardX, CARD.y, CARD.w, CARD.h, hero, { price, locked }, CARD_DEPTH,
       );
       if (!locked) this.drag.register(card, hero, this.run.seatsForRole(hero.role));
       // A hold that never travels opens the stats card instead of starting a drag.
       card.on(
         Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN,
-        () => this.inspector.press(hero, x, CARD.y),
+        () => this.inspector.press(hero, cardX, CARD.y),
       );
       this.cards.push(card);
       x += CARD.w + CARD.gap;

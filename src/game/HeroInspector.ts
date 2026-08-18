@@ -1,15 +1,12 @@
 import Phaser from 'phaser';
 import type { HeroDef } from '../types';
 import { HeroTooltip } from './HeroTooltip';
-import { seatedSlots } from './layout';
+import { HERO_TOUCH, seatedSlots } from './layout';
 
 /** Hold this long on a hero before its stats card opens. */
 const LONG_PRESS_MS = 300;
 /** Past this much travel the gesture is a drag, not a press. */
 const MOVE_TOLERANCE = 12;
-/** Finger-friendly probe around each slot. */
-const PROBE_W = 170;
-const PROBE_H = 170;
 const PROBE_DEPTH = 5;
 
 /**
@@ -41,7 +38,7 @@ export class HeroInspector {
   addProbes(seats: readonly (HeroDef | null)[]): Phaser.GameObjects.Zone[] {
     return seatedSlots(seats).map(({ def, slot }) =>
       this.scene.add
-        .zone(slot.x, slot.y, PROBE_W, PROBE_H)
+        .zone(slot.x, slot.y + HERO_TOUCH.dy, HERO_TOUCH.w, HERO_TOUCH.h)
         .setDepth(PROBE_DEPTH)
         .setInteractive()
         .on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => this.press(def, slot.x, slot.y))

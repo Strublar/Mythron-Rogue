@@ -57,6 +57,15 @@ export const PARTY_SEATS: { role: HeroRole; index: number }[] = [
 
 export const SEAT_COUNT = PARTY_SEATS.length;
 
+/**
+ * One hero's touch box on the battlefield rows. Fixed for every unit — atlas canvases
+ * run 80–110px, so a hitbox taken from the sprite would make some heroes twice as easy
+ * to hit as others. `dy` drops the box onto the drawn body (sprite centre down past the
+ * ground shadow and name label) instead of the sprite's centre. Narrower than the 195px
+ * dps row pitch, so neighbouring seats never steal each other's taps.
+ */
+export const HERO_TOUCH = { w: 180, h: 176, dy: 8 };
+
 export function seatSlot(seat: number): { x: number; y: number } {
   const { role, index } = PARTY_SEATS[seat];
   return HERO_SLOTS[role][index];
