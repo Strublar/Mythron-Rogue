@@ -15,7 +15,15 @@ const DRAG_THRESHOLD = 10;
  */
 export class SeatDragController {
   private readonly highlights: Phaser.GameObjects.Arc[] = [];
-  private dragging?: { card: Phaser.GameObjects.Container; hero: HeroDef; home: { x: number; y: number } };
+  private dragging?: {
+    card: Phaser.GameObjects.Container;
+    hero: HeroDef;
+    home: { x: number; y: number };
+    /** Card centre minus grab point, so the card never teleports under the finger. */
+    grab: { x: number; y: number };
+    /** Where the finger went down — the only honest baseline for tap-vs-drag. */
+    from: { x: number; y: number };
+  };
 
   constructor(
     private readonly scene: Phaser.Scene,
@@ -29,16 +37,15 @@ export class SeatDragController {
   /** Makes a card draggable. `seats` is where this hero may legally land. */
   register(card: Phaser.GameObjects.Container, hero: HeroDef, seats: number[]): void {
     const home = { x: card.x, y: card.y };
-    card
-      .setInteractive(
-        new Phaser.Geom.Rectangle(-card.width / 2, -card.height / 2, card.width, card.height),
-        Phaser.Geom.Rectangle.Contains,
-      )
-      .on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, () => {
-        this.dragging = { card, hero, home };
-        card.setDepth(card.depth + 100);
-        this.showTargets(seats, hero);
-      });
+    card.on(Phaser.Input.Events.GAMEOBJECT_POINTER_DOWN, (p: Phaser.Input.Pointer) => {
+      this.dragging = {
+        card, hero, home,
+        grab: { x: card.x - p.x, y: card.y - p.y },
+        from: { x: p.x, y: p.y },
+      };
+      card.setDepth(card.depth + 100);
+      this.showTargets(seats, hero);
+    });
   }
 
   /** Drops every highlight and any card mid-drag — call before the scene redraws. */
@@ -49,27 +56,31 @@ export class SeatDragController {
 
   private move(p: Phaser.Input.Pointer): void {
     if (!this.dragging) return;
-    this.dragging.card.setPosition(p.x, p.y);
+    const { card, grab } = this.dragging;
+    card.setPosition(p.x + grab.x, p.y + grab.y);
   }
 
   private release(p: Phaser.Input.Pointer): void {
     const drag = this.dragging;
     if (!drag) return;
     // A tap that never travelled is not a drop — it belongs to the long-press inspect.
-    const travelled = Phaser.Math.Distance.Between(drag.home.x, drag.home.y, p.x, p.y);
-    const seat = travelled > DRAG_THRESHOLD ? this.seatUnder(p) : -1;
+    const travelled = Phaser.Math.Distance.Between(drag.from.x, drag.from.y, p.x, p.y);
+    // The card, not the finger, is what the player aims: test from where the card sits.
+    const seat = travelled > DRAG_THRESHOLD
+      ? this.seatUnder(p.x + drag.grab.x, p.y + drag.grab.y)
+      : -1;
 
     this.cancel();
     if (seat >= 0) this.onDrop(drag.hero, seat);
   }
 
   /** The nearest legal seat within the catch radius, or -1. */
-  private seatUnder(p: Phaser.Input.Pointer): number {
+  private seatUnder(x: number, y: number): number {
     let best = -1;
     let bestDist = SEAT_RADIUS;
     for (const ring of this.highlights) {
       const seat = ring.getData('seat') as number;
-      const dist = Phaser.Math.Distance.Between(ring.x, ring.y, p.x, p.y);
+      const dist = Phaser.Math.Distance.Between(ring.x, ring.y, x, y);
       if (dist < bestDist) {
         best = seat;
         bestDist = dist;

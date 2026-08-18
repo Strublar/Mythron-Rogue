@@ -35,7 +35,13 @@ export function createHeroCard(
   opts: HeroCardOpts = {},
   depth = 0,
 ): Phaser.GameObjects.Container {
-  const card = scene.add.container(x, y).setDepth(depth).setSize(w, h);
+  // The hit area lives with the card, not with whoever wires up a gesture: a locked
+  // card takes no drag but still opens its stats card, so both must hit the same box.
+  const card = scene.add
+    .container(x, y)
+    .setDepth(depth)
+    .setSize(w, h)
+    .setInteractive(new Phaser.Geom.Rectangle(-w / 2, -h / 2, w, h), Phaser.Geom.Rectangle.Contains);
 
   const bg = scene.add
     .rectangle(0, 0, w, h, IDLE, 0.95)
