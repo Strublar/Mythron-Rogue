@@ -1,8 +1,7 @@
 import Phaser from 'phaser';
-import { bossForDifficulty } from '../../data/bosses';
+import { bossForStage, goldForStage } from '../../data/bosses';
 import { FightEngine } from '../../engine/FightEngine';
-import type { ExpGain } from '../../engine/ProgressionStore';
-import { grantRunExp, grantRunGold, recordClear } from '../../engine/ProgressionStore';
+import type { RunState } from '../../engine/RunState';
 import type { FightEvent, FightOutcome, HeroDef } from '../../types';
 import { CombatantView } from '../CombatantView';
 import { DragCastController } from '../DragCastController';
@@ -17,16 +16,15 @@ import {
 /** Pause between the boss dying and the result screen, so the death animation plays out. */
 const RESULT_DELAY_MS = 1400;
 
-/** One run, one boss: the team as the team page seated it, and the rung it picked. */
+/** One stage of a run. The run carries the team, the stage number and the purse. */
 export interface BossFightData {
-  team: HeroDef[];
-  difficulty: number;
+  run: RunState;
 }
 
 export class BossFightScene extends Phaser.Scene {
   private engine!: FightEngine;
+  private run!: RunState;
   private team!: HeroDef[];
-  private difficulty = 1;
   private bossView!: CombatantView;
   private heroViews!: Map<string, CombatantView>;
   private dragCast!: DragCastController;
@@ -39,16 +37,16 @@ export class BossFightScene extends Phaser.Scene {
   }
 
   init(data: BossFightData): void {
-    this.team = data.team;
-    this.difficulty = data.difficulty;
+    this.run = data.run;
+    this.team = this.run.party();
   }
 
   create(): void {
     this.ended = false;
     this.drawBackground();
 
-    // The team is fixed for the whole run — it was built on the team page, not here.
-    const boss = bossForDifficulty(this.difficulty);
+    // The team is whatever the interlude left in the seats; a stage is one fresh engine.
+    const boss = bossForStage(this.run.stage);
     this.engine = new FightEngine(this.team, boss);
 
     this.bossView = new CombatantView(this, {
@@ -63,7 +61,7 @@ export class BossFightScene extends Phaser.Scene {
       barFill: 0xd7443e,
       barText: true,
     });
-    // The boss and its rung never change mid-run, so neither caption needs keeping.
+    // Neither caption changes during a fight, so neither needs keeping.
     this.add
       .text(GAME_WIDTH / 2, BOSS_BAR_Y - 34, boss.name.toUpperCase(), {
         fontFamily: 'Lato', fontSize: '28px', color: '#f3e6c8', fontStyle: 'bold',
@@ -71,7 +69,7 @@ export class BossFightScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
     this.add
-      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 66, `DIFFICULTY ${this.difficulty}`, {
+      .text(GAME_WIDTH / 2, BOSS_BAR_Y - 66, `STAGE ${this.run.stage}`, {
         fontFamily: 'Lato', fontSize: '20px', color: '#ffd76b', fontStyle: 'bold',
         stroke: '#000000', strokeThickness: 4,
       })
@@ -89,7 +87,7 @@ export class BossFightScene extends Phaser.Scene {
 
     this.engine.on('fight', (e: FightEvent) => this.onFightEvent(e));
     this.refreshViews();
-    this.announceDifficulty();
+    this.announceStage();
   }
 
   /**
@@ -197,7 +195,7 @@ export class BossFightScene extends Phaser.Scene {
       case 'end':
         this.dragCast.cancel();
         this.ended = true;
-        // The run is the fight: either outcome ends it, once the death plays out.
+        // A clear opens the interlude; a wipe ends the run. Either way, after the death.
         if (e.outcome === 'victory') this.bossView.playDeath();
         this.time.delayedCall(
           RESULT_DELAY_MS, () => this.showResultOverlay(e.outcome ?? 'defeat'),
@@ -206,9 +204,9 @@ export class BossFightScene extends Phaser.Scene {
     }
   }
 
-  private announceDifficulty(): void {
+  private announceStage(): void {
     const banner = this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `DIFFICULTY ${this.difficulty}`, {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2, `STAGE ${this.run.stage}`, {
         fontFamily: 'Lato', fontSize: '72px', fontStyle: 'bold', color: '#ffd76b',
         stroke: '#000000', strokeThickness: 6,
       })
@@ -247,118 +245,74 @@ export class BossFightScene extends Phaser.Scene {
   }
 
   /**
-   * The run's one result screen. A clear pays exp and gold and opens the next rung; a wipe
-   * pays nothing at all, so the only way up the ladder is through the boss.
+   * The stage's result screen. A clear banks the stage's gold and opens the interlude;
+   * a wipe ends the run outright — there is no retry, the next run starts from scratch.
    */
   private showResultOverlay(outcome: FightOutcome): void {
     const won = outcome === 'victory';
     const depth = 200;
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x000000, 0.7).setDepth(depth);
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 200, won ? 'VICTORY' : 'DEFEAT', {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 200, won ? 'VICTORY' : 'RUN OVER', {
         fontFamily: 'Lato', fontSize: '64px', fontStyle: 'bold', color: won ? '#ffd76b' : '#ff8a80',
       })
       .setOrigin(0.5)
       .setDepth(depth);
     this.add
-      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, `DIFFICULTY ${this.difficulty}`, {
+      .text(GAME_WIDTH / 2, GAME_HEIGHT / 2 - 140, `STAGE ${this.run.stage}`, {
         fontFamily: 'Lato', fontSize: '28px', fontStyle: 'bold', color: '#f3e6c8',
       })
       .setOrigin(0.5)
       .setDepth(depth);
 
-    const bottom = won ? this.drawVictoryReport(depth) : this.drawDefeatNote(depth);
-    // Thumb-reachable by default, pushed down only if a long level-up list needs the room.
+    const bottom = won ? this.drawClearReport(depth) : this.drawWipeNote(depth);
     const buttonY = Math.max(bottom + 80, GAME_HEIGHT - 180);
 
     createButton(
-      this, GAME_WIDTH / 2 - 176, buttonY, won ? 'CONTINUE' : 'TEAM',
-      () => this.scene.start('TeamScene'), depth,
-    );
-    createButton(
-      this, GAME_WIDTH / 2 + 176, buttonY, 'RETRY',
-      () => this.scene.start('BossFightScene', { team: this.team, difficulty: this.difficulty }),
+      this, GAME_WIDTH / 2, buttonY, won ? 'CONTINUE' : 'MENU',
+      () => (won
+        ? this.scene.start('InterludeScene', { run: this.run, phase: 'offer' })
+        : this.scene.start('MainMenuScene')),
       depth,
     );
   }
 
-  /** Banks the clear, then reports what it paid. Returns the bottom of the report. */
-  private drawVictoryReport(depth: number): number {
-    const gains = grantRunExp(this.team, this.difficulty);
-    const earnedGold = grantRunGold(this.difficulty);
-    const unlocked = recordClear(this.difficulty);
+  /** Banks the stage's gold, then reports the purse the shop is about to see. */
+  private drawClearReport(depth: number): number {
+    const earned = goldForStage(this.run.stage);
+    this.run.award(earned);
 
-    let y = GAME_HEIGHT / 2 - 80;
-    if (unlocked) {
-      this.add
-        .text(GAME_WIDTH / 2, y, `DIFFICULTY ${this.difficulty + 1} UNLOCKED`, {
-          fontFamily: 'Lato', fontSize: '26px', fontStyle: 'bold', color: '#8ef2a5',
-        })
-        .setOrigin(0.5)
-        .setDepth(depth);
-      y += 50;
-    }
-    return this.drawExpReport(gains, earnedGold, y, depth);
-  }
-
-  /** A wipe pays nothing — say so plainly rather than showing an empty report. */
-  private drawDefeatNote(depth: number): number {
     const y = GAME_HEIGHT / 2 - 60;
     this.add
-      .text(GAME_WIDTH / 2, y, 'NO REWARDS — THE BOSS MUST FALL', {
+      .text(GAME_WIDTH / 2, y, `+${earned} GOLD`, {
+        fontFamily: 'Lato', fontSize: '30px', fontStyle: 'bold', color: '#ffd76b',
+      })
+      .setOrigin(0.5)
+      .setDepth(depth);
+    this.add
+      .text(GAME_WIDTH / 2, y + 42, `PURSE  ${this.run.gold}G`, {
+        fontFamily: 'Lato', fontSize: '22px', color: '#f3e6c8',
+      })
+      .setOrigin(0.5)
+      .setDepth(depth);
+    return y + 42;
+  }
+
+  /** A wipe is the end of the run — nothing carries over to the next one. */
+  private drawWipeNote(depth: number): number {
+    const y = GAME_HEIGHT / 2 - 60;
+    this.add
+      .text(GAME_WIDTH / 2, y, `THE PARTY FELL ON STAGE ${this.run.stage}`, {
         fontFamily: 'Lato', fontSize: '22px', color: '#9aa3b8',
       })
       .setOrigin(0.5)
       .setDepth(depth);
     this.add
-      .text(GAME_WIDTH / 2, y + 40, 'Level your team or drop a difficulty', {
+      .text(GAME_WIDTH / 2, y + 40, 'The next run starts fresh.', {
         fontFamily: 'Lato', fontSize: '20px', color: '#9aa3b8',
       })
       .setOrigin(0.5)
       .setDepth(depth);
     return y + 40;
-  }
-
-  /**
-   * What the clear paid: flat exp for everyone, gold for the purse, then whoever leveled.
-   * Returns its bottom so the buttons can sit under it.
-   */
-  private drawExpReport(gains: ExpGain[], earnedGold: number, y: number, depth: number): number {
-    const earned = gains[0]?.exp ?? 0;
-    this.add
-      .text(GAME_WIDTH / 2, y, `+${earned} EXP TO EACH HERO`, {
-        fontFamily: 'Lato', fontSize: '26px', fontStyle: 'bold', color: '#7fd4ff',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-
-    // Gold is account-wide, not per hero — it buys orbs in the shop between runs.
-    this.add
-      .text(GAME_WIDTH / 2, y + 38, `+${earnedGold} GOLD`, {
-        fontFamily: 'Lato', fontSize: '26px', fontStyle: 'bold', color: '#ffd76b',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-
-    const levelled = gains.filter(g => g.after.level > g.before.level);
-    if (levelled.length === 0) return y + 38;
-
-    this.add
-      .text(GAME_WIDTH / 2, y + 82, 'LEVEL UP', {
-        fontFamily: 'Lato', fontSize: '22px', fontStyle: 'bold', color: '#ffd76b',
-      })
-      .setOrigin(0.5)
-      .setDepth(depth);
-
-    levelled.forEach((g, i) => {
-      const unlock = g.unlockedPassive ? '  ·  PASSIVE UNLOCKED' : '';
-      this.add
-        .text(GAME_WIDTH / 2, y + 114 + i * 26, `${g.name.toUpperCase()}  →  LVL ${g.after.level}${unlock}`, {
-          fontFamily: 'Lato', fontSize: '18px', color: g.unlockedPassive ? '#ffd76b' : '#f3e6c8',
-        })
-        .setOrigin(0.5)
-        .setDepth(depth);
-    });
-    return y + 114 + (levelled.length - 1) * 26;
   }
 }

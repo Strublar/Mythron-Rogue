@@ -25,6 +25,8 @@ export interface UnitDef {
   atlasKey: string;       // Phaser atlas key (e.g. 'f5_general')
   framePrefix: string;    // frame name prefix (e.g. 'f5_general')
   availableAnims: UnitAnimKey[];
+  /** Atlases that name an animation differently — 'hit' shipped as 'hurt', and so on. */
+  frameAliases?: Partial<Record<UnitAnimKey, string>>;
 }
 
 // Every Duelyst atlas in public/resources/units ships the same six animations.
@@ -33,6 +35,13 @@ const STANDARD_ANIMS: UnitAnimKey[] = ['idle', 'run', 'attack', 'hit', 'death', 
 function standardUnit(key: string): UnitDef {
   return { atlasKey: key, framePrefix: key, availableAnims: STANDARD_ANIMS };
 }
+
+// A handful of Duelyst atlases name the same six animations differently. The alias maps
+// them back onto the shared keys, so nothing downstream needs to know.
+const FRAME_ALIASES: Record<string, Partial<Record<UnitAnimKey, string>>> = {
+  f5_silitharyoung: { breathing: 'breathe', hit: 'hurt', run: 'move' },
+  f4_gloomchaser: { hit: 'damage' },
+};
 
 // Registry of unit definitions — the party roster plus the bosses. Add new units here.
 // BootScene preloads exactly these atlases, so keep it to what the fight actually uses.
@@ -61,9 +70,27 @@ export const UNIT_DEFS: Record<string, UnitDef> = Object.fromEntries(
     'neutral_bloodstonealchemist',
     'neutral_spiritscribe',
     'neutral_mercshieldoracle',
-    // bosses
+    // starters — the seven a run opens with
+    'f1_silverguardsquire',
+    'f5_silitharyoung',
+    'f4_gloomchaser',
+    'neutral_minijax',
+    'f3_dervish',
+    'f2_panddo',
+    'f6_treant',
+    // bosses — the stage ladder, in order
+    'boss_wraith',
+    'boss_cindera',
+    'boss_kron',
+    'boss_vampire',
+    'boss_grym',
+    'boss_skurge',
+    'boss_serpenti',
     'boss_shadowlord',
-  ].map(key => [key, standardUnit(key)]),
+  ].map(key => [
+    key,
+    { ...standardUnit(key), frameAliases: FRAME_ALIASES[key] } satisfies UnitDef,
+  ]),
 );
 
 function animGlobalKey(unitKey: string, anim: UnitAnimKey): string {
@@ -80,7 +107,7 @@ export function registerUnitAnims(scene: Phaser.Scene, unitKey: string): void {
     if (scene.anims.exists(globalKey)) continue;
 
     const frames = scene.anims.generateFrameNames(def.atlasKey, {
-      prefix: `${def.framePrefix}_${animKey}_`,
+      prefix: `${def.framePrefix}_${def.frameAliases?.[animKey] ?? animKey}_`,
       start: 0,
       end: 999,
       zeroPad: 3,

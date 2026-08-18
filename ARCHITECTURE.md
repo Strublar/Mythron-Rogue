@@ -31,17 +31,17 @@
     ├── types/
     │   └── index.ts                    # ALL shared types/interfaces (source of truth)
     ├── data/
-    │   ├── heroes.ts                   # ROSTER (20 heroes) + heroesByRole + defaultParty + threat tuning
+    │   ├── heroes.ts                   # ROSTER (27) + STARTER_PARTY_IDS + RECRUIT_POOL + threat tuning
     │   ├── abilities.ts                # One Ability per hero — the roster's identity
     │   ├── statMath.ts                 # grow()/haste()/growHero() percent math + armor, crit, power math
     │   ├── boons.ts                    # Boon pool, roll, effect text, applyBoons — unused by the run loop
-    │   ├── progression.ts              # Levels 1–10: per-level growth, exp curve, applyProgress
-    │   ├── passives.ts                 # PASSIVES — one per hero, unlocked at level 5
-    │   ├── orbs.ts                     # Rarity tiers/odds, orb price, dupe exp, runGold, rollOrb
-    │   └── bosses.ts                   # SHADOWLORD + bossForDifficulty ladder scaling
+    │   ├── passives.ts                 # PASSIVES — one per hero, live from the moment it is fielded
+    │   ├── rarity.ts                   # Rarity label/colour/order + roll weight + SHOP_PRICE
+    │   ├── heroDraft.ts                # rollRecruitOffers (tag-anchored) + rollShopOffers (rarity-weighted)
+    │   └── bosses.ts                   # BOSS_LADDER (8) + bossForStage looping + goldForStage
     ├── engine/
     │   ├── FightEngine.ts              # Real-time fight sim: cooldowns, auto-acts, casts
-    │   └── ProgressionStore.ts         # localStorage account: levels, owned, gold, team, maxDifficulty
+    │   └── RunState.ts                 # One run: seven seats, stage, purse. Nothing persists.
     └── game/
         ├── PhaserGame.ts               # Phaser.Game config (720×1280 portrait, FIT)
         ├── layout.ts                   # Slot coordinates, PARTY_SEATS, scales, bar/ground offsets
@@ -50,20 +50,20 @@
         ├── CombatantView.ts            # Sprite + health bar + mana bar + ready ring + threat bar/aggro mark
         ├── ui.ts                       # Shared btn_confirm button factory + scene backdrop/label
         ├── HealthBar.ts                # Reusable HP/shield bar (heroes and boss)
-        ├── HeroTooltip.ts              # Long-press stats card: level, colour-coded stat grid, passive, ability values
+        ├── HeroTooltip.ts              # Long-press stats card: rarity, colour-coded stat grid, passive, ability values
         ├── statDisplay.ts               # STAT_COLOR + heroStatRows: the one stat palette and row order
         ├── HeroInspector.ts            # Shared long-press-to-inspect: timer, drag guard, slot probes
         ├── BoonCard.ts                 # Boon offer card — unused by the run loop, kept with boons.ts
-        ├── HeroCard.ts                 # Roster grid card: portrait, name, stat strip, level/exp, tap/hold
+        ├── HeroCard.ts                 # Offer card container: portrait, name, stat strip, rarity, price
         ├── BoonListPanel.ts            # "BOONS" overlay — unused by the run loop, kept with boons.ts
-        ├── PrismaticFx.ts              # Foil treatment: texture map + orbiting gradients + shine sweep
-        ├── PrismaticBurst.ts           # Prismatic reveal flourish: gradient floor, rays, sparks
+        ├── PrismaticFx.ts              # Foil treatment — unused by the run loop, kept with PrismaticBurst
+        ├── PrismaticBurst.ts           # Prismatic reveal flourish — unused by the run loop
         ├── DragCastController.ts       # Drag-to-cast: arrow, target highlight, hit test
+        ├── SeatDragController.ts       # Drag an offer card onto a seat: role highlights, drop test
         └── scenes/
             ├── BootScene.ts            # Preloads unit atlases (from UNIT_DEFS) + backdrops
-            ├── MainMenuScene.ts        # Title + FIGHT BOSS + SHOP link
-            ├── TeamScene.ts            # Between-runs page: 7 seats, difficulty stepper, owned-hero grid
-            ├── ShopScene.ts            # Orb shop: gold, buy, rarity reveal, duplicate exp
+            ├── MainMenuScene.ts        # Title + NEW RUN
+            ├── InterludeScene.ts       # Between stages: free recruit, then the paid shop
             └── BossFightScene.ts       # Layout, engine ↔ view wiring, result overlay
 ```
 
@@ -72,8 +72,11 @@
 ```
 main.ts
   └── PhaserGame (canvas, 720×1280 portrait)
-        BootScene → MainMenuScene → TeamScene → BossFightScene → TeamScene
-        TeamScene hands BossFightScene.init { team: HeroDef[7], difficulty }
+        BootScene → MainMenuScene → BossFightScene ⇄ InterludeScene
+        MainMenuScene starts a run:  BossFightScene.init { run: new RunState() }
+        A cleared stage:  BossFightScene → InterludeScene 'offer' → 'shop'
+                          → run.advance() → BossFightScene (next boss)
+        A wipe:           BossFightScene → MainMenuScene (the run is over)
         BossFightScene owns:
           FightEngine        (pure state; emits 'fight' FightEvents)
           CombatantView      (1 boss + the seven heroes)
@@ -87,23 +90,27 @@ main.ts
   party's three rows in the bottom half.
 - **Party:** exactly 7 heroes — 2 tanks (front), 3 dps (mid), 2 heals (back). `HERO_SLOTS` in
   `layout.ts` is the single source of slot positions; `PARTY_SEATS` names the seven seats in
-  row order and `seatedSlots(seats)` hands slots to the filled ones. The team is a seat array
-  in `AccountState.team`, so its index *is* its seat, in the store and on the battlefield.
-- **The run loop.** `TeamScene` → `BossFightScene` → `TeamScene`. A run is **one boss**: the
-  team is fixed for its whole length and never changes during it. A clear pays exp + gold and
-  opens the next rung; a wipe pays nothing. Both outcomes offer RETRY (same team, same
-  difficulty) and a way back to the team page.
-- **The team is built between runs.** `TeamScene` is the only page besides the shop: the seven
-  seats on top, the difficulty stepper above them, the owned heroes of the selected seat's role
-  below. Seats are role-locked, so the *selected seat is the grid's filter* — no role tabs.
-  Tapping a hero seats it (`setTeamSeat`, persisted immediately); tapping the seat's current
-  occupant empties it. A hero seated elsewhere draws `IN PARTY` and is not pickable — free its
-  seat first. FIGHT is disabled until all seven seats are filled.
-- **Difficulty.** `AccountState.maxDifficulty` is the highest rung *unlocked* (so "best cleared"
-  is one less). The stepper picks anything from 1 up to it; `recordClear(difficulty)` bumps it by
-  one when a clear lands on the top rung. `bossForDifficulty(d)` compounds `SHADOWLORD`'s hp,
-  attack and swing rate per rung. Base is tuned for a full seven at **level 1**, and the curve is
-  deliberately gentle — the team only grows through account levels, so climbing means upgrading.
+  row order and `seatedSlots(seats)` hands slots to the filled ones. The team is the seat
+  array in `RunState`, so its index *is* its seat, in the run and on the battlefield.
+- **The run loop.** A run is a **chain of bosses**: `BossFightScene` → `InterludeScene`
+  (`offer` then `shop`) → `BossFightScene`, stage after stage, until the party wipes. A wipe
+  ends the run outright — there is no retry and nothing carries over, so the next run opens on
+  the same starter seven. `RunState` holds the whole run: the seven seats, the stage number and
+  the purse. Nothing is persisted; there is no account state, no save file, no localStorage.
+- **The team is drafted inside the run.** Every run opens on `STARTER_PARTY_IDS` — the seven
+  rarity-`C` starters — seated in `PARTY_SEATS` order. `InterludeScene` runs twice per cleared
+  boss: `offer` hands out one free recruit rolled by `rollRecruitOffers` (tag-anchored on a
+  random seat, so a party leaning on a tag keeps drawing it), then `shop` sells up to three more
+  rolled by `rollShopOffers` (rarity-weighted) at `SHOP_PRICE`. Both work the same way: drag a
+  card onto a seat of its role and it **replaces** whoever sits there. The party is always seven,
+  so every pick is a swap — there is never a gap to fill.
+- **The boss ladder.** `BOSS_LADDER` is eight hand-tuned `BossDef`s fought in stage order;
+  `bossForStage(stage)` indexes it and, past the last rung, loops it with compounding hp and
+  attack. Stage 1 is tuned for the starter seven, and every rung after it assumes one recruit
+  and one shop buy more than the last — the team gains *bodies of higher rarity*, never levels.
+- **Gold.** `goldForStage(stage)` is banked by the victory overlay and spent in that stage's
+  shop. The purse rides `RunState` and dies with the run, so saving across a stage is the only
+  way to reach an `S`.
 - **Stats.** Every `HeroDef` carries eight combat numbers: `maxHp`, `hpRegen` (hp/s),
   `armor`, `attack` + `attackIntervalMs`, `power`, `critChance` and `manaRegen` (mana/s).
   Armor mitigates TFT-style — `mitigate()` in `statMath.ts` cuts a hit by
@@ -139,7 +146,8 @@ main.ts
   A tank ability is a taunt: it wipes party threat and plants `TAUNT_THREAT` on the caster.
 - **Tags.** Every hero carries two `HeroTag`s — a faction (`lyonar` … `mercenary`) and an
   archetype (`arcanyst`, `blade`, `golem`, `beast`, `blood`). They ride the roster card and the
-  stats popup as the flavour axis a team can be built around; nothing mechanical reads them yet.
+  stats popup as the flavour axis a team can be built around, and `rollRecruitOffers` anchors
+  the free offer on a seated hero's tag — the one place they are mechanical.
 - **Trigger boons** *(machinery only — boons are not part of the run loop)*. A boon carries `effect` (permanent stats), `trigger` (a `BoonTriggerSpec`),
   or both. A trigger is `on` (fight event or `interval`) + `when` (scope gate, threshold,
   1-in-N, internal cooldown, once-per-fight) + `do` (boss damage, heal, shield, timed buff,
@@ -149,53 +157,38 @@ main.ts
   free. Trigger payloads never wake other triggers (`firing` guard, one level deep). Owning a
   boon twice fires it twice — no percentage stacking. `setBoons` hands the engine the run's
   boons; per-fight counters are seeded when the engine is constructed.
-- **Progression is the game.** Every hero carries an account-wide level (1–10) persisted in
-  `localStorage` by `ProgressionStore`; `leveledRoster()` folds it in via `applyProgress` (base
-  stats grown by `LEVEL_GROWTH × (level-1)`, plus the `PASSIVES` entry from `PASSIVE_LEVEL` (5)).
-  `teamDefs()` resolves the seated team through it, so **a run fields leveled heroes with live
-  passives** — that growth is the only thing that climbs the difficulty ladder. A cleared boss
-  pays `runExp(difficulty)` to all seven (`grantRunExp`) and `runGold(difficulty)` to the purse
-  (`grantRunGold`), both called from the victory overlay only.
-- **Collection.** Heroes are *owned*, not given. A fresh account owns exactly the seven
-  `DEFAULT_PARTY_IDS` — one legal 2/3/2, seated as the starting team — and `ownedRoster()` is
-  what `TeamScene`'s grid draws, so an unowned hero can never be fielded. Each `HeroDef` carries a
-  `rarity` (`B`/`A`/`S`, 10/7/3 heroes) which is pull weight and card tint only, never stats.
-  A cleared boss also pays `runGold(difficulty)` — a flat base plus a per-rung bonus, so climbing
-  funds faster. `ShopScene` spends it: `buyOrb()` deducts `ORB_PRICE`, draws
-  a tier on `RARITY_WEIGHT` (70/25/5) then a hero uniformly inside it, and either unlocks that
-  hero or — if already owned — pays it `DUPE_EXP` through the same `addExp` levels use, so no
-  pull is dead and a complete collection keeps orbs worth buying. `ProgressionStore` remains the
-  only writer; its key is `mythron.progression.v2` (`AccountState`), migrating a v1 blob's levels
-  and seeding the starters. `team` and `maxDifficulty` are additive to that blob the way
-  `prismatic` was — a save written before them reads the default seating and rung 1.
-- **Prismatics.** Duelyst's foil variant, ported from its CC0 art in
-  `public/resources/prismatic/`. An orb draws `rollPrismatic()` (10%) on top of the hero it
-  rolled; a prismatic pull unlocks the variant even for a hero already owned, so `OrbPull.duplicate`
-  means "nothing new", not "hero already owned", and a prismatic duplicate pays `PRISMATIC_EXP_MULT ×
-  DUPE_EXP`. `AccountState.prismatic` is the owned list — additive to the `v2` blob, so an older save
-  simply reads `[]`. Purely cosmetic: it never touches stats, odds, or which heroes are fieldable.
-  `prismaticSwirl` (three additive gradients orbiting on 10/15/20s periods plus a shine band, clipped
-  by a geometry mask) is the reusable layer behind both a `HeroCard` and the shop panel;
-  `prismaticBurst` is the one-shot reveal flourish. Both destroy their own tweens and mask on
-  `DESTROY` — the grids rebuild constantly and only ever destroy display objects.
+- **The roster.** 27 `HeroDef`s in one list: the 20 recruitable ones and the 7 rarity-`C`
+  starters. `rarity` (`C`/`B`/`A`/`S`) is shop price, roll weight and card tint — never stats.
+  `RECRUIT_POOL` is everything above `C`, so a starter can be replaced but never offered back.
+  There are no levels: `ROSTER` folds each hero's `PASSIVES` entry on at module load, so a hero
+  fights exactly as its data reads, from stage 1.
 - **Passives** ride the boon trigger machinery, owner-scoped: a `TriggerSlot` with `ownerId`
   only wakes on its owner's events, `'scope'` targets resolve to that hero alone, and a dead
-  owner's passive lies dormant. `HeroTooltip` shows a locked passive greyed with its unlock
-  level. Live in a run: `teamDefs()` fields leveled defs, so a level-5 hero's passive attaches.
+  owner's passive lies dormant. Every hero fields its passive the moment it is seated — there
+  is no unlock level, so `HeroTooltip` never draws a locked one.
 - **Boons** are not part of the run loop. `src/data/boons.ts`, `BoonCard` and `BoonListPanel`
-  are kept intact and unreferenced; the engine's trigger machinery still backs passives.
-- **One fight per engine.** `FightEngine` is constructed with the team and its boss and lives
-  for exactly that fight — there is no next-boss path. `BossFightScene.addHeroView` is the view
-  side: sprite, bars, `DragCastController.register`, and the long-press probe, run once per seat
-  at `create` (`this.team` arrives in seat order, so its index is its `seatSlot`).
-- **The result overlay** is the run's only end state. It draws after `RESULT_DELAY_MS` so the
-  boss death plays out, and it is the *only* place rewards are granted — a defeat draws the same
-  overlay with a "no rewards" note. Both offer RETRY (`scene.start` on itself with the same
-  `BossFightData`) beside CONTINUE / TEAM.
+  are kept intact and unreferenced; the engine's trigger machinery still backs passives. The
+  prismatic modules (`PrismaticFx`, `PrismaticBurst`) sit in the same drawer: nothing in a run
+  grants a foil, so their art is no longer preloaded.
+- **One fight per engine, one engine per stage.** `FightEngine` is constructed with the team
+  and its boss and lives for exactly that fight; the next stage is a fresh `BossFightScene`, so
+  the party enters every boss at full hp and mana. `addHeroView` is the view side: sprite, bars,
+  `DragCastController.register`, and the long-press probe, run once per seat at `create`
+  (`run.party()` arrives in seat order, so its index is its `seatSlot`).
+- **The result overlay** ends every stage. It draws after `RESULT_DELAY_MS` so the boss death
+  plays out, and it is the *only* place gold is granted. A clear shows the stage's payout and
+  the purse behind one CONTINUE into the interlude; a wipe shows how far the run got behind one
+  MENU. There is no retry — the run is the unit of play.
 - **Casting.** Drag a hero onto the target its ability's `targetKind` names — the boss or an
   ally. Role never gates it. Rejected drops cost no cooldown.
 - **Engine never touches sprites.** `FightEngine` emits `FightEvent`s; views react.
+- **Seat drags.** `SeatDragController` is the interlude's input: it drags a `HeroCard`
+  container, rings only the seats matching the dragged hero's role, and reports the seat it
+  landed on. It is deliberately separate from `DragCastController`, which hit-tests live
+  `CombatantView`s and casts abilities. A drop anywhere else springs the card home, unpaid.
 - **Atlas frames are untrimmed square canvases** of varying size that share one art
   scale — use the flat `HERO_SCALE` / `BOSS_SCALE`, never per-unit height normalisation.
-- Adding a unit means adding its key to `UNIT_DEFS`; `BootScene` preloads from that map.
+- Adding a unit means adding its key to `UNIT_DEFS`; `BootScene` preloads from that map. A few
+  atlases name their animations differently (`hurt` for `hit`, `move` for `run`) — `FRAME_ALIASES`
+  in `UnitAnimator.ts` maps them back onto the shared keys.
 - VFX: Phaser tweens/graphics only.

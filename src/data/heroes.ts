@@ -1,10 +1,11 @@
 import type { HeroDef, HeroRole, HeroTag } from '../types';
 import {
-  BLOOD_PACT, BULWARK, BURST, CHAIN_LIGHTNING, DAWNLIGHT, GLACIAL_SLAM, HEADHUNT,
-  IMMOLATION, MEND, NIGHTSORROW, RALLYING_ROAR, SHIELD_BASH, SHIELD_ORACLE,
-  SPIRIT_SCRIBE, STORMBLADE, SUNWARD_AEGIS, VENOM_SHOT, VOID_STEP, WARBEAST_HOWL,
-  WHIRLING_GUARD,
+  BAMBOO_BALM, BLOOD_PACT, BULWARK, BURST, CHAIN_LIGHTNING, DAWNLIGHT, GLACIAL_SLAM,
+  HEADHUNT, IMMOLATION, MEND, NIGHTSORROW, POUNCE, RALLYING_ROAR, ROOTED_CALM, SAND_CUT,
+  SCALED_HIDE, SHADOW_NIP, SHIELD_BASH, SHIELD_ORACLE, SPIRIT_SCRIBE, SQUIRE_GUARD,
+  STORMBLADE, SUNWARD_AEGIS, VENOM_SHOT, VOID_STEP, WARBEAST_HOWL, WHIRLING_GUARD,
 } from './abilities';
+import { PASSIVES } from './passives';
 
 // Threat tuning: every point of damage dealt or hp healed converts to threat with
 // this role weight, so tanks out-aggro the rest of the party without out-damaging it.
@@ -22,7 +23,7 @@ export const TAUNT_THREAT = 1500;
  * Stat shape per role: tanks buy survival (armor, hp regen), dps buy crit and power,
  * healers buy power and mana regen — the cast, not the auto-attack, is their output.
  */
-export const ROSTER: HeroDef[] = [
+const ENTRIES: HeroDef[] = [
   // Tanks — high hp, heavy armor, slow swings, every ability taunts.
   { id: 'tank_ironcliffe', unitKey: 'f1_ironcliffeguardian', name: 'Ironcliffe Guardian', rarity: 'B',
     role: 'tank', tags: ['lyonar', 'golem'], maxHp: 900, hpRegen: 12, armor: 55,
@@ -108,7 +109,41 @@ export const ROSTER: HeroDef[] = [
     role: 'heal', tags: ['mercenary', 'golem'], maxHp: 440, hpRegen: 8, armor: 25,
     attack: 28, attackIntervalMs: 1500, power: 135, critChance: 8, manaRegen: 11,
     ability: SHIELD_ORACLE },
+
+  // Starters — the seven every run opens with. Rarity 'C': never rolled, never sold,
+  // and a full tier under the roster above, so any recruit is a visible upgrade.
+  { id: 'start_squire', unitKey: 'f1_silverguardsquire', name: 'Silverguard Squire', rarity: 'C',
+    role: 'tank', tags: ['lyonar', 'blade'], maxHp: 620, hpRegen: 8, armor: 34,
+    attack: 16, attackIntervalMs: 1500, power: 80, critChance: 5, manaRegen: 10,
+    ability: SQUIRE_GUARD },
+  { id: 'start_silithar', unitKey: 'f5_silitharyoung', name: 'Young Silithar', rarity: 'C',
+    role: 'tank', tags: ['magmar', 'beast'], maxHp: 660, hpRegen: 9, armor: 30,
+    attack: 18, attackIntervalMs: 1550, power: 80, critChance: 5, manaRegen: 9,
+    ability: SCALED_HIDE },
+  { id: 'start_wraithling', unitKey: 'f4_gloomchaser', name: 'Wraithling', rarity: 'C',
+    role: 'dps', tags: ['abyssian', 'blood'], maxHp: 260, hpRegen: 2, armor: 10,
+    attack: 30, attackIntervalMs: 1100, power: 75, critChance: 12, manaRegen: 10,
+    ability: SHADOW_NIP },
+  { id: 'start_minijax', unitKey: 'neutral_minijax', name: 'Mini Jax', rarity: 'C',
+    role: 'dps', tags: ['mercenary', 'beast'], maxHp: 300, hpRegen: 3, armor: 12,
+    attack: 34, attackIntervalMs: 1200, power: 70, critChance: 10, manaRegen: 9,
+    ability: POUNCE },
+  { id: 'start_dervish', unitKey: 'f3_dervish', name: 'Wind Dervish', rarity: 'C',
+    role: 'dps', tags: ['vetruvian', 'golem'], maxHp: 280, hpRegen: 2, armor: 10,
+    attack: 28, attackIntervalMs: 950, power: 80, critChance: 14, manaRegen: 10,
+    ability: SAND_CUT },
+  { id: 'start_panddo', unitKey: 'f2_panddo', name: 'Panddo', rarity: 'C',
+    role: 'heal', tags: ['songhai', 'beast'], maxHp: 300, hpRegen: 4, armor: 12,
+    attack: 26, attackIntervalMs: 1700, power: 85, critChance: 5, manaRegen: 10,
+    ability: BAMBOO_BALM },
+  { id: 'start_treant', unitKey: 'f6_treant', name: 'Treant', rarity: 'C',
+    role: 'heal', tags: ['vanar', 'beast'], maxHp: 340, hpRegen: 5, armor: 16,
+    attack: 22, attackIntervalMs: 1600, power: 80, critChance: 5, manaRegen: 9,
+    ability: ROOTED_CALM },
 ];
+
+/** A run fields passives from stage 1 — there are no levels to unlock them any more. */
+export const ROSTER: HeroDef[] = ENTRIES.map(def => ({ ...def, passive: PASSIVES[def.id] }));
 
 /** Singular tag name, unlike the plural boon-scope label. */
 export const TAG_LABEL: Record<HeroTag, string> = {
@@ -133,19 +168,25 @@ export function partyTags(party: HeroDef[]): { tag: HeroTag; count: number }[] {
     .sort((a, b) => b.count - a.count);
 }
 
-/** `roster` defaults to the raw entries; screens pass the progression-leveled roster. */
 export function heroesByRole(role: HeroRole, roster: HeroDef[] = ROSTER): HeroDef[] {
   return roster.filter(h => h.role === role);
 }
 
-/** The 2/3/2 the selection screen opens on, so a run can start without picking. */
-export const DEFAULT_PARTY_IDS = [
-  'tank_ironcliffe', 'tank_silvermane',
-  'dps_lancer', 'dps_araki', 'dps_pyromancer',
-  'heal_mystic', 'heal_sunriser',
+/** The 2/3/2 every run opens with, in `PARTY_SEATS` order — index is seat. */
+export const STARTER_PARTY_IDS = [
+  'start_squire', 'start_silithar',
+  'start_wraithling', 'start_minijax', 'start_dervish',
+  'start_panddo', 'start_treant',
 ];
 
-/** Those seven picks, taken from whichever roster is passed in (leveled, usually). */
-export function defaultParty(roster: HeroDef[] = ROSTER): HeroDef[] {
-  return DEFAULT_PARTY_IDS.map(id => roster.find(h => h.id === id)!);
+/** Those seven, seat-ordered — what `RunState` opens on. */
+export function starterParty(): HeroDef[] {
+  return STARTER_PARTY_IDS.map(id => ROSTER.find(h => h.id === id)!);
+}
+
+/** Everything the interlude can hand out. Starters are the floor, never an offer. */
+export const RECRUIT_POOL: HeroDef[] = ROSTER.filter(h => h.rarity !== 'C');
+
+export function heroById(id: string): HeroDef | undefined {
+  return ROSTER.find(h => h.id === id);
 }

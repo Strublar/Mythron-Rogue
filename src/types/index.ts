@@ -55,8 +55,11 @@ export interface Ability {
   buff?: AbilityBuff;
 }
 
-/** Collection tier. Sets how often an orb rolls the hero, nothing else. */
-export type HeroRarity = 'B' | 'A' | 'S';
+/**
+ * Recruit tier. Sets shop price and how often a shop roll draws the hero, nothing else.
+ * `C` is the starter tier: the seven a run opens with, never rolled and never sold.
+ */
+export type HeroRarity = 'C' | 'B' | 'A' | 'S';
 
 export interface HeroDef {
   id: string;
@@ -64,7 +67,7 @@ export interface HeroDef {
   name: string;
   role: HeroRole;
   tags: HeroTag[];      // faction + archetype — what tag boons key off
-  rarity: HeroRarity;   // orb pull weight and card tint — never touches stats
+  rarity: HeroRarity;   // shop price, roll weight and card tint — never touches stats
   maxHp: number;
   hpRegen: number;      // hp restored per second while alive
   armor: number;        // mitigation: damage taken × 100/(100 + armor)
@@ -74,53 +77,13 @@ export interface HeroDef {
   critChance: number;   // % of attacks and casts that land for CRIT_MULT
   manaRegen: number;    // mana per second, toward the ability's cost
   ability: Ability;
-  /** Progression level, 1…MAX_HERO_LEVEL. Absent on the raw roster entries. */
-  level?: number;
-  /** Set by `applyProgress` once the hero reaches PASSIVE_LEVEL. */
+  /** Folded on by `hydrate` in `heroes.ts` — every hero fields its passive from stage 1. */
   passive?: HeroPassive;
 }
 
 /**
- * A hero's account-wide progression: levels earned across runs. Persisted, never
- * part of a run — `applyProgress` folds it into the `HeroDef` the run starts from.
- */
-export interface HeroProgress {
-  level: number;
-  exp: number;          // toward the next level
-}
-
-/**
- * Everything that survives a run: per-hero levels, the heroes owned, the purse, the team
- * the player fields and how deep the difficulty ladder has been climbed.
- */
-export interface AccountState {
-  heroes: Record<string, HeroProgress>;
-  owned: string[];
-  /** Heroes owned in their prismatic variant. Cosmetic only — never touches stats. */
-  prismatic: string[];
-  gold: number;
-  /** The seven seats in `PARTY_SEATS` order — a hero id, or null for an empty seat. */
-  team: (string | null)[];
-  /** Highest difficulty ever cleared; the ladder is selectable up to this. */
-  maxDifficulty: number;
-}
-
-/** The result of one orb, for the shop's reveal panel. */
-export interface OrbPull {
-  hero: HeroDef;
-  rarity: HeroRarity;
-  /** Already owned — the pull paid `exp` to that hero instead of unlocking it. */
-  duplicate: boolean;
-  exp: number;
-  /** The duplicated hero's progress after the exp landed. Absent on a new hero. */
-  progress?: HeroProgress;
-  /** The pull rolled the prismatic variant — pure cosmetic, and it doubles duplicate exp. */
-  prismatic: boolean;
-}
-
-/**
- * The one thing a hero unlocks at PASSIVE_LEVEL. Always on, no cooldown bar, no cast —
- * it rides the same trigger machinery as boons, but owned by a single hero.
+ * A hero's one passive. Always on, no cooldown bar, no cast — it rides the same trigger
+ * machinery as boons, but owned by a single hero.
  */
 export interface HeroPassive {
   id: string;
@@ -254,7 +217,7 @@ export interface BossState {
   dots: ActiveDot[];
 }
 
-/** A run is one boss: 'victory' clears it, 'defeat' wipes the team. Both end the run. */
+/** 'victory' clears the stage and opens the interlude; 'defeat' wipes the team, ending the run. */
 export type FightOutcome = 'ongoing' | 'victory' | 'defeat';
 
 export type FightEventType =

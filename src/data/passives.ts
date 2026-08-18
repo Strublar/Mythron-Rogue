@@ -1,9 +1,9 @@
 import type { HeroPassive } from '../types';
 
 /**
- * One passive per hero, unlocked at PASSIVE_LEVEL. Same trigger machinery as boons, but
- * owner-scoped: only the owner's events wake it, and a `'scope'` target means the owner
- * alone. `text` is hand-written — a passive is identity, not a stat line.
+ * One passive per hero, live from the moment it is fielded. Same trigger machinery as
+ * boons, but owner-scoped: only the owner's events wake it, and a `'scope'` target means
+ * the owner alone. `text` is hand-written — a passive is identity, not a stat line.
  */
 export const PASSIVES: Record<string, HeroPassive> = {
   // ── Tanks ─────────────────────────────────────────────────────────────────
@@ -139,5 +139,54 @@ export const PASSIVES: Record<string, HeroPassive> = {
     id: 'p_aegis_weave', name: 'Aegis Weave',
     text: 'When his own shield breaks, it reforms for 60.',
     trigger: { on: 'shield_broken', do: { target: 'actor', shield: 60 } },
+  },
+
+  // ── Starters ──────────────────────────────────────────────────────────────
+  // Weaker shapes of the same ideas — enough to teach what a passive does.
+  start_squire: {
+    id: 'p_squires_oath', name: "Squire's Oath",
+    text: 'Every 4th hit taken shields him for 40.',
+    trigger: { on: 'hero_damaged', when: { everyNth: 4 }, do: { target: 'actor', shield: 40 } },
+  },
+  start_silithar: {
+    id: 'p_thick_scales', name: 'Thick Scales',
+    text: 'Once per fight, dropping below 30% HP heals him for 150.',
+    trigger: {
+      on: 'hero_hp_below',
+      when: { pct: 30, oncePerFight: true },
+      do: { target: 'actor', heal: 150 },
+    },
+  },
+  start_wraithling: {
+    id: 'p_gloomtouch', name: 'Gloomtouch',
+    text: 'Every 5th swing bleeds the boss for 10 every 1s over 3s.',
+    trigger: {
+      on: 'hero_attack',
+      when: { everyNth: 5 },
+      do: { dot: { damage: 10, tickMs: 1000, durationMs: 3000 } },
+    },
+  },
+  start_minijax: {
+    id: 'p_scrappy', name: 'Scrappy',
+    text: 'Each cast whets his claws: +12% attack for 4s.',
+    trigger: {
+      on: 'hero_cast',
+      do: { target: 'source', buff: { durationMs: 4000, attackPct: 12 } },
+    },
+  },
+  start_dervish: {
+    id: 'p_sandspin', name: 'Sandspin',
+    text: 'Every 5th swing carves an extra 15 off the boss.',
+    trigger: { on: 'hero_attack', when: { everyNth: 5 }, do: { bossDamage: 15 } },
+  },
+  start_panddo: {
+    id: 'p_calm_breath', name: 'Calm Breath',
+    text: 'Every 4th heal landed spills 25 onto the weakest ally.',
+    trigger: { on: 'hero_healed', when: { everyNth: 4 }, do: { target: 'lowest', heal: 25 } },
+  },
+  start_treant: {
+    id: 'p_deep_roots', name: 'Deep Roots',
+    text: 'Every 5th heal landed also shields its target for 35.',
+    trigger: { on: 'hero_healed', when: { everyNth: 5 }, do: { target: 'actor', shield: 35 } },
   },
 };
